@@ -1,4 +1,4 @@
-const CACHE_NAME = "amz-walm-skill-console-v2";
+const CACHE_NAME = "amz-walm-skill-console-v3";
 const ASSETS = [
   "./",
   "./index.html",

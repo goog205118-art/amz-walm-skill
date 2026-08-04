@@ -2,10 +2,11 @@
   "name": "amz-walm-skill",
   "version": "1.0.0",
   "private": true,
-  "description": "内部电商 AI 技能工作台静态前端。",
+  "description": "内部电商 AI 技能工作台静态前端",
   "scripts": {
-    "build": "node scripts/build.js",
-    "check": "node --check app.js && node --check skills.manifest.js && node --check scripts/build.js"
+    "generate:skills": "node scripts/generate-skills-manifest.js",
+    "build": "node scripts/generate-skills-manifest.js && node scripts/build.js",
+    "check": "node --check app.js && node --check skills.manifest.js && node --check scripts/generate-skills-manifest.js && node --check scripts/build.js"
   },
   "engines": {
     "node": ">=18"

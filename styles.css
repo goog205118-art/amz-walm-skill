@@ -188,7 +188,11 @@ button {
 
 .sidebar {
   display: grid;
-  grid-template-rows: auto minmax(120px, 0.85fr) minmax(160px, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: #111d35;
+  border-color: #223251;
+  color: #dbeafe;
+  padding: 12px;
 }
 
 .inspector {
@@ -213,6 +217,14 @@ button {
 
 .section.grow {
   flex: 1;
+}
+
+.filter-section {
+  gap: 8px;
+}
+
+.library-section {
+  overflow: hidden;
 }
 
 .section-head {
@@ -285,6 +297,77 @@ summary.section-head::-webkit-details-marker {
   color: var(--accent);
 }
 
+.sidebar .section h2,
+.sidebar .count,
+.sidebar .field span {
+  color: #8fb5eb;
+}
+
+.sidebar .field {
+  min-width: 0;
+}
+
+.sidebar .field input {
+  background: #1a2948;
+  border-color: #2b3d63;
+  color: #f8fbff;
+  padding: 9px 10px;
+}
+
+.sidebar .field input::placeholder {
+  color: #8295b5;
+}
+
+.sidebar .tabs {
+  gap: 6px;
+  max-height: 68px;
+  overflow: auto;
+}
+
+.sidebar .tab {
+  padding: 5px 8px;
+  border-color: #2b3d63;
+  background: #152441;
+  color: #a9c9ff;
+  font-size: 12px;
+}
+
+.sidebar .tab.active {
+  border-color: #22d3ee;
+  background: rgba(34, 211, 238, 0.12);
+  color: #67e8f9;
+}
+
+.filter-drawer {
+  border-top: 1px solid rgba(143, 181, 235, 0.14);
+  padding-top: 7px;
+}
+
+.filter-drawer summary {
+  cursor: pointer;
+  list-style: none;
+  color: #8fb5eb;
+  font-size: 12px;
+}
+
+.filter-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.filter-drawer summary::after {
+  content: "展开";
+  margin-left: 8px;
+  color: #67e8f9;
+}
+
+.filter-drawer[open] summary::after {
+  content: "收起";
+}
+
+.filter-drawer .tabs {
+  margin-top: 8px;
+}
+
 .list {
   display: flex;
   flex-direction: column;
@@ -331,6 +414,113 @@ summary.section-head::-webkit-details-marker {
   overflow: hidden;
 }
 
+.skill-group {
+  border-bottom: 1px solid rgba(143, 181, 235, 0.14);
+  padding: 2px 0 7px;
+}
+
+.skill-group:last-child {
+  border-bottom: 0;
+}
+
+.skill-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+  color: #6ee7ff;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.2;
+  padding: 7px 3px;
+}
+
+.skill-group-head::-webkit-details-marker {
+  display: none;
+}
+
+.skill-group-head::before {
+  content: "▸";
+  color: #67e8f9;
+  font-size: 11px;
+}
+
+.skill-group[open] .skill-group-head::before {
+  content: "▾";
+}
+
+.group-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.group-count {
+  min-width: 24px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(103, 232, 249, 0.12);
+  color: #a5f3fc;
+  font-size: 11px;
+}
+
+.skill-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 0 4px 14px;
+}
+
+.sidebar .item {
+  border: 0;
+  background: transparent;
+  color: #c7dcff;
+}
+
+.sidebar .item:hover {
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.sidebar .item.active {
+  background: rgba(34, 211, 238, 0.16);
+  color: #ffffff;
+  box-shadow: inset 3px 0 0 #22d3ee;
+}
+
+.skill-nav-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.skill-nav-item .item-title {
+  margin: 0;
+  color: inherit;
+  font-size: 13px;
+}
+
+.skill-nav-item .item-meta {
+  color: #8fb5eb;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.empty-state {
+  padding: 12px;
+  color: #9fb7d9;
+  font-size: 13px;
+}
+
 .compact .item {
   padding: 9px 11px;
 }
@@ -345,6 +535,42 @@ summary.section-head::-webkit-details-marker {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.session-drawer {
+  border-top: 1px solid rgba(143, 181, 235, 0.18);
+  padding-top: 8px;
+  min-height: 0;
+}
+
+.session-drawer summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.session-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.session-drawer summary::after {
+  content: "收起";
+  color: #8fb5eb;
+  font-size: 12px;
+}
+
+.session-drawer:not([open]) summary::after {
+  content: "展开";
+}
+
+.session-drawer .list {
+  max-height: 24vh;
+  margin-top: 8px;
+}
+
+.session-drawer .item-title,
+.session-drawer .item-meta,
+.session-drawer .item-desc {
+  color: inherit;
 }
 
 .chat-head {

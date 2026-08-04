@@ -8,7 +8,8 @@
     content: "内容",
     marketing: "营销",
     operations: "运营",
-    imported: "导入"
+    imported: "导入",
+    ecommerce: "电商"
   };
 
   const els = {};
@@ -17,6 +18,7 @@
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
+    state.openGroups = state.openGroups && typeof state.openGroups === "object" ? state.openGroups : {};
     bindElements();
     bindEvents();
     hydrateSettings();
@@ -160,24 +162,51 @@
 
   function renderSkillList() {
     const filtered = getFilteredSkills();
-    els.skillCount.textContent = `共 ${filtered.length} 个`;
-    els.skillList.innerHTML = filtered
-      .map((skill) => {
-        const active = skill.id === state.activeSkillId ? "active" : "";
-        const platform = skill.platform.join(" / ");
-        return `
-          <button class="item ${active}" data-skill="${escapeHtml(skill.id)}">
-            <div class="item-title">${escapeHtml(skill.name)}</div>
-            <div class="item-meta">${escapeHtml(getCategoryLabel(skill.category))} · ${escapeHtml(platform)}</div>
-            <div class="item-desc">${escapeHtml(skill.summary)}</div>
-          </button>
-        `;
-      })
-      .join("");
+    const groups = groupSkills(filtered);
+    els.skillCount.textContent = `共 ${filtered.length} 个 / ${groups.length} 组`;
+    els.skillList.innerHTML = groups.length
+      ? groups
+          .map((group) => {
+            const forcedOpen = Boolean(state.searchText.trim());
+            const isOpen = forcedOpen || state.openGroups[group.key] !== false;
+            const activeInGroup = group.skills.some((skill) => skill.id === state.activeSkillId);
+            return `
+              <details class="skill-group ${activeInGroup ? "has-active" : ""}" data-group="${escapeHtml(group.key)}" ${isOpen ? "open" : ""}>
+                <summary class="skill-group-head">
+                  <span class="group-name">${escapeHtml(group.label)}</span>
+                  <span class="group-count">${group.skills.length}</span>
+                </summary>
+                <div class="skill-group-items">
+                  ${group.skills
+                    .map((skill) => {
+                      const active = skill.id === state.activeSkillId ? "active" : "";
+                      const platform = (skill.platform || []).slice(0, 3).join(" / ");
+                      const status = skill.status ? ` · ${skill.status}` : "";
+                      return `
+                        <button class="item skill-nav-item ${active}" data-skill="${escapeHtml(skill.id)}" title="${escapeHtml(skill.summary)}">
+                          <span class="item-title">${escapeHtml(skill.name)}</span>
+                          <span class="item-meta">${escapeHtml(platform)}${escapeHtml(status)}</span>
+                        </button>
+                      `;
+                    })
+                    .join("")}
+                </div>
+              </details>
+            `;
+          })
+          .join("")
+      : `<div class="empty-state">没有匹配的 Skill</div>`;
 
     els.skillList.querySelectorAll("button").forEach((button) => {
       button.addEventListener("click", () => {
         setActiveSkill(button.dataset.skill);
+      });
+    });
+    els.skillList.querySelectorAll(".skill-group").forEach((group) => {
+      group.addEventListener("toggle", () => {
+        if (state.searchText.trim()) return;
+        state.openGroups[group.dataset.group] = group.open;
+        persist();
       });
     });
   }
@@ -230,10 +259,19 @@
 
   function renderQuickPrompts() {
     const skill = getActiveSkill();
-    const prompts = skill ? [skill.starterPrompt, "帮我做一个可执行的 90 天计划。", "把重点按优先级排序。"] : ["先给我一个策略建议。"];
+    const prompts = skill
+      ? [
+          ["使用当前 Skill 起草", skill.starterPrompt],
+          ["90 天计划", "帮我做一个可执行的 90 天计划。"],
+          ["优先级排序", "把重点按优先级排序。"]
+        ]
+      : [["策略建议", "先给我一个策略建议。"]];
     els.quickPrompts.innerHTML = prompts
-      .filter(Boolean)
-      .map((prompt) => `<button class="chip" data-prompt="${escapeHtml(prompt)}">${escapeHtml(prompt)}</button>`)
+      .filter(([, prompt]) => prompt)
+      .map(
+        ([label, prompt]) =>
+          `<button class="chip" data-prompt="${escapeHtml(prompt)}" title="${escapeHtml(prompt)}">${escapeHtml(label)}</button>`
+      )
       .join("");
 
     els.quickPrompts.querySelectorAll("button").forEach((button) => {
@@ -248,10 +286,13 @@
     const skill = getActiveSkill();
     const session = getActiveSession();
     els.activeSkillName.textContent = skill ? skill.name : "未选择技能";
-    els.activeSkillMeta.textContent = skill ? `${getCategoryLabel(skill.category)} · ${skill.platform.join(" / ")}` : "";
+    els.activeSkillMeta.textContent = skill
+      ? `${skill.groupLabel || getCategoryLabel(skill.category)} · ${skill.platform.join(" / ")}${skill.status ? ` · ${skill.status}` : ""}`
+      : "";
     els.skillBrief.innerHTML = skill
       ? `
         <div><strong>摘要：</strong>${escapeHtml(skill.summary)}</div>
+        <div class="muted" style="margin-top:8px;"><strong>原始名称：</strong>${escapeHtml(skill.sourceName || skill.id)}</div>
         <div class="muted" style="margin-top:8px;"><strong>起手提示：</strong>${escapeHtml(skill.starterPrompt)}</div>
       `
       : `<div class="muted">请选择一个技能查看说明。</div>`;
@@ -500,11 +541,15 @@
       const platformOk = state.platformFilter === "all" || (skill.platform || []).includes(state.platformFilter);
       const text = [
         skill.name,
+        skill.sourceName,
         skill.category,
+        skill.groupLabel,
+        skill.groupName,
         skill.summary,
-        skill.platform.join(" "),
-        skill.triggers.join(" "),
-        skill.capabilities.join(" ")
+        skill.sourceSummary,
+        (skill.platform || []).join(" "),
+        (skill.triggers || []).join(" "),
+        (skill.capabilities || []).join(" ")
       ]
         .join(" ")
         .toLowerCase();
@@ -515,6 +560,28 @@
 
   function allSkills() {
     return [...window.SKILL_LIBRARY, ...(state.customSkills || [])];
+  }
+
+  function groupSkills(skills) {
+    const map = new Map();
+    for (const skill of skills) {
+      const key = skill.groupKey || skill.category || "other";
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: skill.groupLabel || getCategoryLabel(skill.category),
+          order: Number.isFinite(skill.groupOrder) ? skill.groupOrder : 999,
+          skills: []
+        });
+      }
+      map.get(key).skills.push(skill);
+    }
+    return [...map.values()]
+      .map((group) => ({
+        ...group,
+        skills: group.skills.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
+      }))
+      .sort((a, b) => (a.order === b.order ? a.label.localeCompare(b.label, "zh-CN") : a.order - b.order));
   }
 
   function getSkillById(skillId) {
@@ -608,7 +675,13 @@
         normalized.slice(0, 6000)
       ].join("\n\n"),
       importedAt: new Date().toISOString(),
-      sourceFile: fileName
+      sourceFile: fileName,
+      sourceName: title,
+      groupKey: "imported",
+      groupName: "Imported",
+      groupLabel: "导入技能",
+      groupOrder: 1000,
+      status: "本地"
     };
   }
 
@@ -759,6 +832,7 @@
         },
         customSkills: Array.isArray(parsed.customSkills) ? parsed.customSkills : [],
         platformFilter: parsed.platformFilter || "all",
+        openGroups: parsed.openGroups && typeof parsed.openGroups === "object" ? parsed.openGroups : {},
         sessions: Array.isArray(parsed.sessions) && parsed.sessions.length ? parsed.sessions : clone(window.DEFAULT_WORKSPACE.sessions)
       };
       workspace.settings.models = normalizeModelList(workspace.settings.models, workspace.settings.model);

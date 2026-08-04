@@ -4,7 +4,8 @@
 
 ## 功能
 
-- 技能目录、搜索、分类和平台筛选
+- 自动载入 `eCommerce-Skills-main` 全量 162 个技能
+- 高密度分组技能导航、搜索、分类和平台筛选
 - 会话创建、切换和本地保存
 - 独立设置页，支持维护多个可选模型
 - 轻量关键词路由和路由原因展示
@@ -21,6 +22,7 @@
 也可以构建并预览：
 
 ```bash
+npm run generate:skills
 npm run check
 npm run build
 ```
