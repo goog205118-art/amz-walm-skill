@@ -28,8 +28,12 @@
   function bindElements() {
     [
       "modelInput",
+      "modelListInput",
       "apiKeyInput",
       "endpointInput",
+      "settingsBtn",
+      "settingsModal",
+      "closeSettingsBtn",
       "saveSettingsBtn",
       "newSessionBtn",
       "exportBtn",
@@ -61,6 +65,11 @@
   }
 
   function bindEvents() {
+    els.settingsBtn.addEventListener("click", openSettings);
+    els.closeSettingsBtn.addEventListener("click", closeSettings);
+    els.settingsModal.querySelectorAll("[data-close-settings]").forEach((button) => {
+      button.addEventListener("click", closeSettings);
+    });
     els.saveSettingsBtn.addEventListener("click", saveSettingsFromForm);
     els.newSessionBtn.addEventListener("click", createNewSession);
     els.exportBtn.addEventListener("click", exportWorkspace);
@@ -81,10 +90,21 @@
       els.messageInput.focus();
     });
     els.sendBtn.addEventListener("click", sendMessage);
+    els.modelListInput.addEventListener("change", () => {
+      renderModelOptions(els.modelInput.value, parseModelList(els.modelListInput.value));
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !els.settingsModal.classList.contains("hidden")) {
+        closeSettings();
+      }
+    });
   }
 
   function hydrateSettings() {
+    state.settings.models = normalizeModelList(state.settings.models, state.settings.model);
+    renderModelOptions(state.settings.model, state.settings.models);
     els.modelInput.value = state.settings.model;
+    els.modelListInput.value = state.settings.models.join("\n");
     els.apiKeyInput.value = state.settings.apiKey;
     els.endpointInput.value = state.settings.endpoint;
     els.searchInput.value = state.searchText;
@@ -263,12 +283,27 @@
     els.apiState.textContent = state.settings.apiKey ? "API 密钥已保存" : "演示模式";
   }
 
+  function openSettings() {
+    hydrateSettings();
+    els.settingsModal.classList.remove("hidden");
+    els.modelInput.focus();
+  }
+
+  function closeSettings() {
+    els.settingsModal.classList.add("hidden");
+  }
+
   function saveSettingsFromForm() {
-    state.settings.model = els.modelInput.value.trim() || window.DEFAULT_SETTINGS.model;
+    const models = normalizeModelList(parseModelList(els.modelListInput.value), els.modelInput.value);
+    const selectedModel = els.modelInput.value.trim() || models[0] || window.DEFAULT_SETTINGS.model;
+    state.settings.models = normalizeModelList(models, selectedModel);
+    state.settings.model = selectedModel;
     state.settings.apiKey = els.apiKeyInput.value.trim();
     state.settings.endpoint = els.endpointInput.value.trim() || window.DEFAULT_SETTINGS.endpoint;
     persist();
+    hydrateSettings();
     updateStatus();
+    closeSettings();
   }
 
   function createNewSession() {
@@ -678,6 +713,7 @@
         ...state.settings,
         ...imported.settings
       };
+      state.settings.models = normalizeModelList(state.settings.models, state.settings.model);
     }
     if (Array.isArray(imported.sessions)) {
       state.sessions = imported.sessions;
@@ -708,11 +744,13 @@
   function loadWorkspace() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return clone(window.DEFAULT_WORKSPACE);
+      const initial = clone(window.DEFAULT_WORKSPACE);
+      initial.settings.models = normalizeModelList(initial.settings.models, initial.settings.model);
+      return initial;
     }
     try {
       const parsed = JSON.parse(raw);
-      return {
+      const workspace = {
         ...clone(window.DEFAULT_WORKSPACE),
         ...parsed,
         settings: {
@@ -723,8 +761,12 @@
         platformFilter: parsed.platformFilter || "all",
         sessions: Array.isArray(parsed.sessions) && parsed.sessions.length ? parsed.sessions : clone(window.DEFAULT_WORKSPACE.sessions)
       };
+      workspace.settings.models = normalizeModelList(workspace.settings.models, workspace.settings.model);
+      return workspace;
     } catch {
-      return clone(window.DEFAULT_WORKSPACE);
+      const fallback = clone(window.DEFAULT_WORKSPACE);
+      fallback.settings.models = normalizeModelList(fallback.settings.models, fallback.settings.model);
+      return fallback;
     }
   }
 
@@ -759,6 +801,30 @@
 
   function getCategoryLabel(category) {
     return CATEGORY_LABELS[category] || category || "未分类";
+  }
+
+  function renderModelOptions(selected, sourceModels) {
+    const models = normalizeModelList(sourceModels || state.settings.models, selected || state.settings.model);
+    els.modelInput.innerHTML = models
+      .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
+      .join("");
+    els.modelInput.value = models.includes(selected) ? selected : models[0];
+  }
+
+  function parseModelList(value) {
+    return String(value || "")
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function normalizeModelList(models, preferredModel) {
+    const defaults = Array.isArray(window.DEFAULT_SETTINGS.models) ? window.DEFAULT_SETTINGS.models : [window.DEFAULT_SETTINGS.model];
+    const source = Array.isArray(models) && models.length ? models : defaults;
+    const merged = [preferredModel, ...source, window.DEFAULT_SETTINGS.model]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    return [...new Set(merged)];
   }
 
   function summarizeInput(text) {

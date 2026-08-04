@@ -19,25 +19,7 @@
           </div>
         </div>
         <div class="toolbar">
-          <label class="field">
-            <span>模型</span>
-            <input id="modelInput" type="text" list="modelOptions" />
-          </label>
-          <datalist id="modelOptions">
-            <option value="gpt-4.1-mini"></option>
-            <option value="gpt-4.1"></option>
-            <option value="gpt-4o-mini"></option>
-            <option value="gpt-4o"></option>
-          </datalist>
-          <label class="field api-key">
-            <span>API 密钥</span>
-            <input id="apiKeyInput" type="password" placeholder="sk-..." />
-          </label>
-          <label class="field endpoint">
-            <span>接口地址</span>
-            <input id="endpointInput" type="url" />
-          </label>
-          <button id="saveSettingsBtn" class="btn primary">保存设置</button>
+          <button id="settingsBtn" class="btn primary">设置</button>
           <button id="newSessionBtn" class="btn">新建会话</button>
           <button id="exportBtn" class="btn">导出工作区</button>
           <label class="btn file-btn">
@@ -106,42 +88,79 @@
         </section>
 
         <aside class="panel inspector">
-          <section class="section">
-            <div class="section-head">
+          <details class="section collapsible" open>
+            <summary class="section-head">
               <h2>技能说明</h2>
-            </div>
+            </summary>
             <div id="skillBrief" class="brief"></div>
-          </section>
+          </details>
 
-          <section class="section">
-            <div class="section-head">
+          <details class="section collapsible">
+            <summary class="section-head">
               <h2>核心能力</h2>
-            </div>
+            </summary>
             <ul id="capabilityList" class="bullets"></ul>
-          </section>
+          </details>
 
-          <section class="section">
-            <div class="section-head">
+          <details class="section collapsible">
+            <summary class="section-head">
               <h2>执行流程</h2>
-            </div>
+            </summary>
             <ol id="workflowList" class="steps"></ol>
-          </section>
+          </details>
 
-          <section class="section">
-            <div class="section-head">
+          <details class="section collapsible" open>
+            <summary class="section-head">
               <h2>路由状态</h2>
-            </div>
+            </summary>
             <div id="routingNote" class="note"></div>
-          </section>
+          </details>
 
-          <section class="section">
-            <div class="section-head">
+          <details class="section collapsible" open>
+            <summary class="section-head">
               <h2>工作区</h2>
-            </div>
+            </summary>
             <div id="workspaceStats" class="stat-grid"></div>
-          </section>
+          </details>
         </aside>
       </main>
+
+      <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <button class="modal-backdrop" type="button" data-close-settings aria-label="关闭设置"></button>
+        <section class="settings-card" role="document">
+          <div class="modal-head">
+            <div>
+              <h2 id="settingsTitle">模型与接口设置</h2>
+              <p>配置会保存到当前浏览器缓存，仅本机使用。</p>
+            </div>
+            <button id="closeSettingsBtn" class="icon-btn" type="button" aria-label="关闭设置">×</button>
+          </div>
+
+          <div class="settings-grid">
+            <label class="field">
+              <span>当前模型</span>
+              <select id="modelInput"></select>
+            </label>
+            <label class="field">
+              <span>模型池</span>
+              <textarea id="modelListInput" rows="5" placeholder="每行一个模型，例如 gpt-4.1-mini"></textarea>
+            </label>
+            <label class="field">
+              <span>API 密钥</span>
+              <input id="apiKeyInput" type="password" placeholder="sk-..." />
+            </label>
+            <label class="field">
+              <span>接口地址</span>
+              <input id="endpointInput" type="url" />
+            </label>
+          </div>
+
+          <div class="settings-actions">
+            <button data-close-settings class="btn" type="button">取消</button>
+            <button id="saveSettingsBtn" class="btn primary" type="button">保存设置</button>
+          </div>
+        </section>
+      </div>
     </div>
   </body>
 </html>

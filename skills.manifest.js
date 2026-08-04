@@ -140,6 +140,7 @@ window.SKILL_LIBRARY = [
 
 window.DEFAULT_SETTINGS = {
   model: "gpt-4.1-mini",
+  models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"],
   endpoint: "https://api.openai.com/v1/chat/completions",
   apiKey: ""
 };
