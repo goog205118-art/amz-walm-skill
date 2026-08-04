@@ -41,6 +41,17 @@ button {
   cursor: pointer;
 }
 
+.btn,
+.file-btn,
+.icon-btn,
+.composer-icon,
+.send-icon,
+.composer-model {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .app-shell {
   height: 100vh;
   display: flex;
@@ -90,7 +101,7 @@ button {
 
 .toolbar {
   display: flex;
-  align-items: end;
+  align-items: center;
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -126,8 +137,6 @@ button {
 .file-btn {
   position: relative;
   overflow: hidden;
-  justify-content: center;
-  align-items: center;
   min-height: 42px;
   padding: 0 14px;
   border-radius: var(--radius);
@@ -675,24 +684,71 @@ summary.section-head::-webkit-details-marker {
   color: var(--text);
 }
 
-.composer textarea {
-  width: 100%;
-  min-height: 88px;
-  max-height: 180px;
-  resize: vertical;
-  padding: 12px 13px;
+.composer-box {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 24px;
   background: white;
+  box-shadow: var(--shadow);
+}
+
+.composer-box textarea {
+  width: 100%;
+  min-height: 44px;
+  max-height: 150px;
+  resize: none;
+  padding: 10px 0 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.composer-icon,
+.send-icon {
+  height: 38px;
+  border-radius: 19px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-alt);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.composer-icon {
+  width: 38px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.composer-model {
+  min-width: 132px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 19px;
+  border: 1px solid var(--line);
+  background: var(--panel-alt);
   color: var(--text);
 }
 
-.composer-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
+.send-icon {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  font-weight: 600;
 }
 
 .brief {
@@ -822,8 +878,13 @@ summary.section-head::-webkit-details-marker {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.settings-grid .field:first-child,
+.settings-grid .field:nth-child(2) {
+  grid-column: 1 / -1;
 }
 
 .settings-grid .field {
@@ -877,5 +938,34 @@ summary.section-head::-webkit-details-marker {
   .chat-panel {
     order: 1;
     min-height: 60vh;
+  }
+
+  .composer-box {
+    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-areas:
+      "clear input"
+      "tools tools";
+  }
+
+  .composer-icon {
+    grid-area: clear;
+  }
+
+  .composer-box textarea {
+    grid-area: input;
+  }
+
+  .composer-tools {
+    grid-area: tools;
+    justify-content: flex-end;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-grid .field:first-child,
+  .settings-grid .field:nth-child(2) {
+    grid-column: auto;
   }
 }

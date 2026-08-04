@@ -10276,6 +10276,7 @@ window.SKILL_LIBRARY = [
 ];
 
 window.DEFAULT_SETTINGS = {
+  "protocol": "openai",
   "model": "gpt-4.1-mini",
   "models": [
     "gpt-4.1-mini",
@@ -10284,7 +10285,18 @@ window.DEFAULT_SETTINGS = {
     "gpt-4o"
   ],
   "endpoint": "https://api.openai.com/v1/chat/completions",
-  "apiKey": ""
+  "apiKey": "",
+  "protocols": {
+    "openai": {
+      "endpoint": "https://api.openai.com/v1/chat/completions"
+    },
+    "gemini": {
+      "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}"
+    },
+    "anthropic": {
+      "endpoint": "https://api.anthropic.com/v1/messages"
+    }
+  }
 };
 
 window.DEFAULT_WORKSPACE = {

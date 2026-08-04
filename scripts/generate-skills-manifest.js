@@ -260,10 +260,22 @@ const defaultSkillId = skills.find((skill) => skill.id === "ecommerce-growth-str
 
 const manifest = `window.SKILL_LIBRARY = ${JSON.stringify(skills, null, 2)};\n\n` +
 `window.DEFAULT_SETTINGS = ${JSON.stringify({
+  protocol: "openai",
   model: "gpt-4.1-mini",
   models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"],
   endpoint: "https://api.openai.com/v1/chat/completions",
-  apiKey: ""
+  apiKey: "",
+  protocols: {
+    openai: {
+      endpoint: "https://api.openai.com/v1/chat/completions"
+    },
+    gemini: {
+      endpoint: "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}"
+    },
+    anthropic: {
+      endpoint: "https://api.anthropic.com/v1/messages"
+    }
+  }
 }, null, 2)};\n\n` +
 `window.DEFAULT_WORKSPACE = {
   activeSkillId: ${JSON.stringify(defaultSkillId)},

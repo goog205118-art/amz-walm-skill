@@ -19,14 +19,14 @@
           </div>
         </div>
         <div class="toolbar">
-          <button id="settingsBtn" class="btn primary">设置</button>
-          <button id="newSessionBtn" class="btn">新建会话</button>
-          <button id="exportBtn" class="btn">导出工作区</button>
-          <label class="btn file-btn">
+          <button id="settingsBtn" class="btn primary" type="button">设置</button>
+          <button id="newSessionBtn" class="btn" type="button">新建会话</button>
+          <button id="exportBtn" class="btn" type="button">导出工作区</button>
+          <label class="btn file-btn" tabindex="0">
             导入工作区
             <input id="importInput" type="file" accept="application/json" />
           </label>
-          <label class="btn file-btn">
+          <label class="btn file-btn" tabindex="0">
             导入 Skill
             <input id="skillImportInput" type="file" accept=".md,.txt,text/markdown,text/plain" multiple />
           </label>
@@ -82,10 +82,13 @@
 
           <div class="composer">
             <div id="quickPrompts" class="quick-prompts"></div>
-            <textarea id="messageInput" rows="5" placeholder="输入业务背景、数据、目标或直接提问..."></textarea>
-            <div class="composer-actions">
-              <button id="clearBtn" class="btn ghost">清空输入</button>
-              <button id="sendBtn" class="btn primary">发送</button>
+            <div class="composer-box">
+              <button id="clearBtn" class="composer-icon" type="button" title="清空输入" aria-label="清空输入">×</button>
+              <textarea id="messageInput" rows="1" placeholder="输入业务背景、数据、目标或直接提问..."></textarea>
+              <div class="composer-tools">
+                <select id="composerModelSelect" class="composer-model" title="切换模型" aria-label="切换模型"></select>
+                <button id="sendBtn" class="send-icon" type="button" aria-label="发送">发送</button>
+              </div>
             </div>
           </div>
         </section>
@@ -140,6 +143,14 @@
           </div>
 
           <div class="settings-grid">
+            <label class="field">
+              <span>接口协议</span>
+              <select id="protocolInput">
+                <option value="openai">OpenAI 协议 / 兼容接口</option>
+                <option value="gemini">Gemini 协议</option>
+                <option value="anthropic">Anthropic 协议</option>
+              </select>
+            </label>
             <label class="field">
               <span>当前模型</span>
               <select id="modelInput"></select>

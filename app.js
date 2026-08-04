@@ -11,6 +11,26 @@
     imported: "导入",
     ecommerce: "电商"
   };
+  const PROTOCOL_PRESETS = {
+    openai: {
+      label: "OpenAI 协议",
+      model: "gpt-4.1-mini",
+      models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"],
+      endpoint: "https://api.openai.com/v1/chat/completions"
+    },
+    gemini: {
+      label: "Gemini 协议",
+      model: "gemini-2.5-flash",
+      models: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"],
+      endpoint: "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}"
+    },
+    anthropic: {
+      label: "Anthropic 协议",
+      model: "claude-3-5-sonnet-latest",
+      models: ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest"],
+      endpoint: "https://api.anthropic.com/v1/messages"
+    }
+  };
 
   const els = {};
   const state = loadWorkspace();
@@ -30,6 +50,7 @@
   function bindElements() {
     [
       "modelInput",
+      "protocolInput",
       "modelListInput",
       "apiKeyInput",
       "endpointInput",
@@ -54,6 +75,7 @@
       "messageList",
       "quickPrompts",
       "messageInput",
+      "composerModelSelect",
       "clearBtn",
       "sendBtn",
       "skillBrief",
@@ -92,6 +114,18 @@
       els.messageInput.focus();
     });
     els.sendBtn.addEventListener("click", sendMessage);
+    els.composerModelSelect.addEventListener("change", () => {
+      state.settings.model = els.composerModelSelect.value;
+      persist();
+      hydrateSettings();
+      updateStatus();
+    });
+    els.protocolInput.addEventListener("change", () => {
+      applyProtocolPreset(els.protocolInput.value);
+    });
+    els.modelInput.addEventListener("change", () => {
+      renderComposerModelOptions(els.modelInput.value, parseModelList(els.modelListInput.value));
+    });
     els.modelListInput.addEventListener("change", () => {
       renderModelOptions(els.modelInput.value, parseModelList(els.modelListInput.value));
     });
@@ -103,9 +137,13 @@
   }
 
   function hydrateSettings() {
-    state.settings.models = normalizeModelList(state.settings.models, state.settings.model);
+    state.settings.protocol = normalizeProtocol(state.settings.protocol);
+    state.settings.models = normalizeModelList(state.settings.models, state.settings.model, state.settings.protocol);
+    els.protocolInput.value = state.settings.protocol;
     renderModelOptions(state.settings.model, state.settings.models);
+    renderComposerModelOptions(state.settings.model, state.settings.models);
     els.modelInput.value = state.settings.model;
+    els.composerModelSelect.value = state.settings.model;
     els.modelListInput.value = state.settings.models.join("\n");
     els.apiKeyInput.value = state.settings.apiKey;
     els.endpointInput.value = state.settings.endpoint;
@@ -321,7 +359,8 @@
 
   function updateStatus() {
     els.storageState.textContent = "浏览器缓存已启用";
-    els.apiState.textContent = state.settings.apiKey ? "API 密钥已保存" : "演示模式";
+    const protocol = getProtocolConfig(state.settings.protocol);
+    els.apiState.textContent = state.settings.apiKey ? `${protocol.label} 已保存` : "演示模式";
   }
 
   function openSettings() {
@@ -335,12 +374,14 @@
   }
 
   function saveSettingsFromForm() {
-    const models = normalizeModelList(parseModelList(els.modelListInput.value), els.modelInput.value);
-    const selectedModel = els.modelInput.value.trim() || models[0] || window.DEFAULT_SETTINGS.model;
-    state.settings.models = normalizeModelList(models, selectedModel);
+    const protocol = normalizeProtocol(els.protocolInput.value);
+    const models = normalizeModelList(parseModelList(els.modelListInput.value), els.modelInput.value, protocol);
+    const selectedModel = els.modelInput.value.trim() || models[0] || getProtocolConfig(protocol).model;
+    state.settings.protocol = protocol;
+    state.settings.models = normalizeModelList(models, selectedModel, protocol);
     state.settings.model = selectedModel;
     state.settings.apiKey = els.apiKeyInput.value.trim();
-    state.settings.endpoint = els.endpointInput.value.trim() || window.DEFAULT_SETTINGS.endpoint;
+    state.settings.endpoint = els.endpointInput.value.trim() || getProtocolConfig(protocol).endpoint;
     persist();
     hydrateSettings();
     updateStatus();
@@ -434,26 +475,15 @@
     }
 
     try {
-      const payload = {
-        model: state.settings.model,
-        messages,
-        temperature: 0.3
-      };
-      const response = await fetch(state.settings.endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${state.settings.apiKey}`
-        },
-        body: JSON.stringify(payload)
-      });
+      const request = buildModelRequest(messages);
+      const response = await fetch(request.url, request);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
-      return extractModelText(data) || buildDemoReply(skill, userMessage);
+      return extractModelText(data, state.settings.protocol) || buildDemoReply(skill, userMessage);
     } catch (error) {
       return `${buildDemoReply(skill, userMessage)}\n\n[API 回退] ${error.message}`;
     }
@@ -786,7 +816,8 @@
         ...state.settings,
         ...imported.settings
       };
-      state.settings.models = normalizeModelList(state.settings.models, state.settings.model);
+      state.settings.protocol = normalizeProtocol(state.settings.protocol);
+      state.settings.models = normalizeModelList(state.settings.models, state.settings.model, state.settings.protocol);
     }
     if (Array.isArray(imported.sessions)) {
       state.sessions = imported.sessions;
@@ -818,7 +849,8 @@
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       const initial = clone(window.DEFAULT_WORKSPACE);
-      initial.settings.models = normalizeModelList(initial.settings.models, initial.settings.model);
+      initial.settings.protocol = normalizeProtocol(initial.settings.protocol);
+      initial.settings.models = normalizeModelList(initial.settings.models, initial.settings.model, initial.settings.protocol);
       return initial;
     }
     try {
@@ -835,11 +867,13 @@
         openGroups: parsed.openGroups && typeof parsed.openGroups === "object" ? parsed.openGroups : {},
         sessions: Array.isArray(parsed.sessions) && parsed.sessions.length ? parsed.sessions : clone(window.DEFAULT_WORKSPACE.sessions)
       };
-      workspace.settings.models = normalizeModelList(workspace.settings.models, workspace.settings.model);
+      workspace.settings.protocol = normalizeProtocol(workspace.settings.protocol);
+      workspace.settings.models = normalizeModelList(workspace.settings.models, workspace.settings.model, workspace.settings.protocol);
       return workspace;
     } catch {
       const fallback = clone(window.DEFAULT_WORKSPACE);
-      fallback.settings.models = normalizeModelList(fallback.settings.models, fallback.settings.model);
+      fallback.settings.protocol = normalizeProtocol(fallback.settings.protocol);
+      fallback.settings.models = normalizeModelList(fallback.settings.models, fallback.settings.model, fallback.settings.protocol);
       return fallback;
     }
   }
@@ -848,7 +882,84 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
-  function extractModelText(data) {
+  function buildModelRequest(messages) {
+    const protocol = normalizeProtocol(state.settings.protocol);
+    const model = state.settings.model;
+    const endpoint = state.settings.endpoint || getProtocolConfig(protocol).endpoint;
+    const apiKey = state.settings.apiKey;
+
+    if (protocol === "gemini") {
+      const system = messages.find((message) => message.role === "system")?.content || "";
+      const contents = messages
+        .filter((message) => message.role !== "system")
+        .map((message) => ({
+          role: message.role === "assistant" ? "model" : "user",
+          parts: [{ text: message.content }]
+        }));
+      return {
+        method: "POST",
+        url: buildEndpointUrl(endpoint, { model, apiKey }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: system ? { parts: [{ text: system }] } : undefined,
+          contents,
+          generationConfig: { temperature: 0.3 }
+        })
+      };
+    }
+
+    if (protocol === "anthropic") {
+      const system = messages.find((message) => message.role === "system")?.content || "";
+      const conversation = messages
+        .filter((message) => message.role !== "system")
+        .map((message) => ({
+          role: message.role === "assistant" ? "assistant" : "user",
+          content: message.content
+        }));
+      return {
+        method: "POST",
+        url: buildEndpointUrl(endpoint, { model, apiKey }),
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1800,
+          temperature: 0.3,
+          system,
+          messages: conversation
+        })
+      };
+    }
+
+    return {
+      method: "POST",
+      url: buildEndpointUrl(endpoint, { model, apiKey }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.3
+      })
+    };
+  }
+
+  function extractModelText(data, protocol) {
+    if (protocol === "gemini") {
+      return (data?.candidates || [])
+        .flatMap((candidate) => candidate?.content?.parts || [])
+        .map((part) => part.text || "")
+        .filter(Boolean)
+        .join("\n");
+    }
+    if (protocol === "anthropic" && Array.isArray(data?.content)) {
+      return data.content.map((item) => item.text || "").filter(Boolean).join("\n");
+    }
     if (typeof data?.output_text === "string") return data.output_text;
     if (Array.isArray(data?.choices) && data.choices[0]?.message?.content) {
       return data.choices[0].message.content;
@@ -878,11 +989,31 @@
   }
 
   function renderModelOptions(selected, sourceModels) {
-    const models = normalizeModelList(sourceModels || state.settings.models, selected || state.settings.model);
+    const protocol = normalizeProtocol(els.protocolInput?.value || state.settings.protocol);
+    const models = normalizeModelList(sourceModels || state.settings.models, selected || state.settings.model, protocol);
     els.modelInput.innerHTML = models
       .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
       .join("");
     els.modelInput.value = models.includes(selected) ? selected : models[0];
+    renderComposerModelOptions(els.modelInput.value, models);
+  }
+
+  function renderComposerModelOptions(selected, sourceModels) {
+    const protocol = normalizeProtocol(els.protocolInput?.value || state.settings.protocol);
+    const models = normalizeModelList(sourceModels || state.settings.models, selected || state.settings.model, protocol);
+    els.composerModelSelect.innerHTML = models
+      .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
+      .join("");
+    els.composerModelSelect.value = models.includes(selected) ? selected : models[0];
+  }
+
+  function applyProtocolPreset(protocolValue) {
+    const preset = getProtocolConfig(protocolValue);
+    els.endpointInput.value = preset.endpoint;
+    els.modelListInput.value = preset.models.join("\n");
+    renderModelOptions(preset.model, preset.models);
+    els.modelInput.value = preset.model;
+    els.composerModelSelect.value = preset.model;
   }
 
   function parseModelList(value) {
@@ -892,13 +1023,36 @@
       .filter(Boolean);
   }
 
-  function normalizeModelList(models, preferredModel) {
-    const defaults = Array.isArray(window.DEFAULT_SETTINGS.models) ? window.DEFAULT_SETTINGS.models : [window.DEFAULT_SETTINGS.model];
+  function normalizeModelList(models, preferredModel, protocolValue) {
+    const protocol = normalizeProtocol(protocolValue || window.DEFAULT_SETTINGS.protocol);
+    const preset = getProtocolConfig(protocol);
+    const defaults = Array.isArray(preset.models) ? preset.models : [preset.model];
     const source = Array.isArray(models) && models.length ? models : defaults;
-    const merged = [preferredModel, ...source, window.DEFAULT_SETTINGS.model]
+    const merged = [preferredModel, ...source, preset.model]
       .map((item) => String(item || "").trim())
       .filter(Boolean);
     return [...new Set(merged)];
+  }
+
+  function normalizeProtocol(protocol) {
+    return PROTOCOL_PRESETS[protocol] ? protocol : "openai";
+  }
+
+  function getProtocolConfig(protocol) {
+    const normalized = normalizeProtocol(protocol);
+    const fromDefault = window.DEFAULT_SETTINGS.protocols?.[normalized] || {};
+    return {
+      ...PROTOCOL_PRESETS[normalized],
+      ...fromDefault
+    };
+  }
+
+  function buildEndpointUrl(endpoint, values) {
+    let url = String(endpoint || "").trim();
+    Object.entries(values).forEach(([key, value]) => {
+      url = url.replaceAll(`{${key}}`, encodeURIComponent(value || ""));
+    });
+    return url;
   }
 
   function summarizeInput(text) {
