@@ -1,0 +1,772 @@
+(function () {
+  const STORAGE_KEY = "nexscope-skill-console.workspace.v1";
+
+  const els = {};
+  const state = loadWorkspace();
+
+  document.addEventListener("DOMContentLoaded", init);
+
+  function init() {
+    bindElements();
+    bindEvents();
+    hydrateSettings();
+    registerServiceWorker();
+    renderAll();
+    updateStatus();
+  }
+
+  function bindElements() {
+    [
+      "modelInput",
+      "apiKeyInput",
+      "endpointInput",
+      "saveSettingsBtn",
+      "newSessionBtn",
+      "exportBtn",
+      "importInput",
+      "skillImportInput",
+      "searchInput",
+      "categoryTabs",
+      "platformTabs",
+      "skillList",
+      "sessionList",
+      "skillCount",
+      "activeSkillName",
+      "activeSkillMeta",
+      "storageState",
+      "apiState",
+      "messageList",
+      "quickPrompts",
+      "messageInput",
+      "clearBtn",
+      "sendBtn",
+      "skillBrief",
+      "capabilityList",
+      "workflowList",
+      "routingNote",
+      "workspaceStats"
+    ].forEach((id) => {
+      els[id] = document.getElementById(id);
+    });
+  }
+
+  function bindEvents() {
+    els.saveSettingsBtn.addEventListener("click", saveSettingsFromForm);
+    els.newSessionBtn.addEventListener("click", createNewSession);
+    els.exportBtn.addEventListener("click", exportWorkspace);
+    els.importInput.addEventListener("change", importWorkspace);
+    els.skillImportInput.addEventListener("change", importSkillFiles);
+    els.searchInput.addEventListener("input", (event) => {
+      state.searchText = event.target.value;
+      persist();
+      renderAll();
+    });
+    els.messageInput.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        sendMessage();
+      }
+    });
+    els.clearBtn.addEventListener("click", () => {
+      els.messageInput.value = "";
+      els.messageInput.focus();
+    });
+    els.sendBtn.addEventListener("click", sendMessage);
+  }
+
+  function hydrateSettings() {
+    els.modelInput.value = state.settings.model;
+    els.apiKeyInput.value = state.settings.apiKey;
+    els.endpointInput.value = state.settings.endpoint;
+    els.searchInput.value = state.searchText;
+  }
+
+  function renderAll() {
+    renderCategories();
+    renderPlatforms();
+    renderSkillList();
+    renderSessions();
+    renderMessages();
+    renderInspector();
+    renderQuickPrompts();
+    renderWorkspaceStats();
+    updateStatus();
+  }
+
+  function renderCategories() {
+    const categories = ["all", ...new Set(allSkills().map((skill) => skill.category))];
+    els.categoryTabs.innerHTML = categories
+      .map((category) => {
+        const active = state.categoryFilter === category ? "active" : "";
+        const label = category === "all" ? "All" : category;
+        return `<button class="tab ${active}" data-category="${escapeHtml(category)}">${escapeHtml(label)}</button>`;
+      })
+      .join("");
+    els.categoryTabs.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.categoryFilter = button.dataset.category;
+        persist();
+        renderAll();
+      });
+    });
+  }
+
+  function renderPlatforms() {
+    const platforms = ["all", ...new Set(allSkills().flatMap((skill) => skill.platform || []))].slice(0, 18);
+    els.platformTabs.innerHTML = platforms
+      .map((platform) => {
+        const active = state.platformFilter === platform ? "active" : "";
+        const label = platform === "all" ? "All platforms" : platform;
+        return `<button class="tab ${active}" data-platform="${escapeHtml(platform)}">${escapeHtml(label)}</button>`;
+      })
+      .join("");
+    els.platformTabs.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.platformFilter = button.dataset.platform;
+        persist();
+        renderAll();
+      });
+    });
+  }
+
+  function renderSkillList() {
+    const filtered = getFilteredSkills();
+    els.skillCount.textContent = `${filtered.length} items`;
+    els.skillList.innerHTML = filtered
+      .map((skill) => {
+        const active = skill.id === state.activeSkillId ? "active" : "";
+        const platform = skill.platform.join(" / ");
+        return `
+          <button class="item ${active}" data-skill="${escapeHtml(skill.id)}">
+            <div class="item-title">${escapeHtml(skill.name)}</div>
+            <div class="item-meta">${escapeHtml(skill.category)} · ${escapeHtml(platform)}</div>
+            <div class="item-desc">${escapeHtml(skill.summary)}</div>
+          </button>
+        `;
+      })
+      .join("");
+
+    els.skillList.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        setActiveSkill(button.dataset.skill);
+      });
+    });
+  }
+
+  function renderSessions() {
+    const sessions = [...state.sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    els.sessionList.innerHTML = sessions
+      .map((session) => {
+        const active = session.id === state.activeSessionId ? "active" : "";
+        const skill = getSkillById(session.skillId);
+        return `
+          <button class="item ${active}" data-session="${escapeHtml(session.id)}">
+            <div class="item-title">${escapeHtml(session.title)}</div>
+            <div class="item-meta">${escapeHtml(skill ? skill.name : "Unknown skill")}</div>
+            <div class="item-desc">${escapeHtml(formatDate(session.updatedAt))}</div>
+          </button>
+        `;
+      })
+      .join("");
+
+    els.sessionList.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        setActiveSession(button.dataset.session);
+      });
+    });
+  }
+
+  function renderMessages() {
+    const session = getActiveSession();
+    if (!session) {
+      els.messageList.innerHTML = "";
+      return;
+    }
+
+    els.messageList.innerHTML = session.messages
+      .map((message) => {
+        const cls = message.role;
+        const meta = message.role === "assistant" ? "Assistant" : message.role === "user" ? "User" : "System";
+        return `
+          <div class="message ${cls}">
+            <div class="message-meta">${meta}</div>
+            <div>${escapeHtml(message.content)}</div>
+          </div>
+        `;
+      })
+      .join("");
+
+    els.messageList.scrollTop = els.messageList.scrollHeight;
+  }
+
+  function renderQuickPrompts() {
+    const skill = getActiveSkill();
+    const prompts = skill ? [skill.starterPrompt, "帮我做一个可执行的 90 天计划。", "把重点按优先级排序。"] : ["先给我一个策略建议。"];
+    els.quickPrompts.innerHTML = prompts
+      .filter(Boolean)
+      .map((prompt) => `<button class="chip" data-prompt="${escapeHtml(prompt)}">${escapeHtml(prompt)}</button>`)
+      .join("");
+
+    els.quickPrompts.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        els.messageInput.value = button.dataset.prompt;
+        els.messageInput.focus();
+      });
+    });
+  }
+
+  function renderInspector() {
+    const skill = getActiveSkill();
+    const session = getActiveSession();
+    els.activeSkillName.textContent = skill ? skill.name : "No skill selected";
+    els.activeSkillMeta.textContent = skill ? `${skill.category} · ${skill.platform.join(" / ")}` : "";
+    els.skillBrief.innerHTML = skill
+      ? `
+        <div><strong>Summary:</strong> ${escapeHtml(skill.summary)}</div>
+        <div class="muted" style="margin-top:8px;"><strong>Starter:</strong> ${escapeHtml(skill.starterPrompt)}</div>
+      `
+      : `<div class="muted">Select a skill to inspect its brief.</div>`;
+
+    els.capabilityList.innerHTML = skill ? skill.capabilities.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "";
+    els.workflowList.innerHTML = skill ? skill.workflow.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "";
+    els.routingNote.innerHTML = session
+      ? `${escapeHtml(state.lastRouteReason || "Routing starts from lightweight keyword matching and falls back to the current skill.")}`
+      : "No active session.";
+  }
+
+  function renderWorkspaceStats() {
+    const sessions = state.sessions.length;
+    const messages = state.sessions.reduce((sum, session) => sum + session.messages.length, 0);
+    const customSkills = state.customSkills.length;
+    const builtInSkills = window.SKILL_LIBRARY.length;
+    els.workspaceStats.innerHTML = [
+      ["Built-in skills", builtInSkills],
+      ["Custom skills", customSkills],
+      ["Sessions", sessions],
+      ["Messages", messages]
+    ]
+      .map(([label, value]) => `<div class="stat"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`)
+      .join("");
+  }
+
+  function updateStatus() {
+    els.storageState.textContent = "Browser cache on";
+    els.apiState.textContent = state.settings.apiKey ? "API key saved" : "Demo fallback";
+  }
+
+  function saveSettingsFromForm() {
+    state.settings.model = els.modelInput.value.trim() || window.DEFAULT_SETTINGS.model;
+    state.settings.apiKey = els.apiKeyInput.value.trim();
+    state.settings.endpoint = els.endpointInput.value.trim() || window.DEFAULT_SETTINGS.endpoint;
+    persist();
+    updateStatus();
+  }
+
+  function createNewSession() {
+    const skill = getActiveSkill();
+    const now = new Date().toISOString();
+    const session = {
+      id: `session-${Date.now()}`,
+      title: skill ? `${skill.name} 会话` : "新会话",
+      skillId: skill ? skill.id : window.DEFAULT_WORKSPACE.activeSkillId,
+      createdAt: now,
+      updatedAt: now,
+      messages: [
+        {
+          role: "assistant",
+          content: "新会话已创建。你可以直接输入任务背景，我会先路由再回答。"
+        }
+      ]
+    };
+    state.sessions.unshift(session);
+    state.activeSessionId = session.id;
+    state.activeSkillId = session.skillId;
+    persist();
+    renderAll();
+  }
+
+  function setActiveSkill(skillId) {
+    const skill = getSkillById(skillId);
+    if (!skill) return;
+    state.activeSkillId = skill.id;
+    const session = getActiveSession();
+    if (session) {
+      session.skillId = skill.id;
+      session.updatedAt = new Date().toISOString();
+      if (!session.title || session.title === "新会话") {
+        session.title = `${skill.name} 会话`;
+      }
+    }
+    persist();
+    renderAll();
+  }
+
+  function setActiveSession(sessionId) {
+    const session = state.sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    state.activeSessionId = session.id;
+    state.activeSkillId = session.skillId;
+    persist();
+    renderAll();
+  }
+
+  async function sendMessage() {
+    const input = els.messageInput.value.trim();
+    if (!input) return;
+
+    const routed = routeSkill(input);
+    const routedSkill = routed.skill || getActiveSkill();
+    if (routedSkill && routedSkill.id !== state.activeSkillId) {
+      state.activeSkillId = routedSkill.id;
+    }
+    state.lastRouteReason = buildRouteReason(input, routedSkill, routed.matches);
+
+    const session = getActiveSession();
+    if (!session) return;
+
+    session.skillId = state.activeSkillId;
+    session.messages.push({ role: "user", content: input });
+    session.updatedAt = new Date().toISOString();
+    if (!session.title || session.title === "新会话") {
+      session.title = input.slice(0, 24);
+    }
+    els.messageInput.value = "";
+    persist();
+    renderAll();
+
+    const skill = getActiveSkill();
+    const reply = await generateReply(session, skill, input);
+    session.messages.push({ role: "assistant", content: reply });
+    session.updatedAt = new Date().toISOString();
+    persist();
+    renderAll();
+  }
+
+  async function generateReply(session, skill, userMessage) {
+    const messages = buildPromptMessages(session, skill, userMessage);
+    if (!state.settings.apiKey) {
+      return buildDemoReply(skill, userMessage);
+    }
+
+    try {
+      const payload = {
+        model: state.settings.model,
+        messages,
+        temperature: 0.3
+      };
+      const response = await fetch(state.settings.endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${state.settings.apiKey}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      return extractModelText(data) || buildDemoReply(skill, userMessage);
+    } catch (error) {
+      return `${buildDemoReply(skill, userMessage)}\n\n[API fallback] ${error.message}`;
+    }
+  }
+
+  function buildPromptMessages(session, skill, userMessage) {
+    const recent = session.messages.slice(-8).map((message) => ({
+      role: message.role,
+      content: message.content
+    }));
+    const system = {
+      role: "system",
+      content: [
+        skill ? skill.systemPrompt : "You are a helpful e-commerce assistant.",
+        skill ? `Capabilities: ${(skill.capabilities || []).join("; ")}` : "",
+        skill ? `Required outputs: ${(skill.outputs || []).join("; ")}` : "",
+        "Return practical, structured, actionable output.",
+        "If information is missing, state assumptions explicitly."
+      ].filter(Boolean).join(" ")
+    };
+    return [system, ...recent];
+  }
+
+  function buildDemoReply(skill, userMessage) {
+    const lines = [];
+    lines.push(`已路由到：${skill ? skill.name : "默认助手"}`);
+    lines.push("");
+    lines.push("判断：");
+    lines.push(`- 你的输入重点是：${summarizeInput(userMessage)}`);
+    lines.push("- 我会先用本地规则给出一个可执行框架。");
+    lines.push("");
+    lines.push("建议：");
+    lines.push("- 先补齐业务背景、目标值、时间范围和约束。");
+    lines.push("- 再按优先级拆成 3 步：诊断、排序、执行。");
+    lines.push("");
+    lines.push("下一步：");
+    lines.push("- 你可以把产品、平台、销量、毛利、预算发给我。");
+    lines.push("- 我会按当前 skill 输出一版结构化计划。");
+    return lines.join("\n");
+  }
+
+  function routeSkill(text) {
+    const haystack = text.toLowerCase();
+    let winner = null;
+    let score = 0;
+    let matches = [];
+    for (const skill of allSkills()) {
+      let current = 0;
+      const currentMatches = [];
+      const tokens = [
+        skill.name,
+        skill.category,
+        ...(skill.platform || []),
+        ...(skill.triggers || []),
+        ...(skill.capabilities || [])
+      ].filter(Boolean);
+      for (const token of tokens) {
+        const normalized = String(token).toLowerCase();
+        if (haystack.includes(normalized)) {
+          current += 1;
+          currentMatches.push(token);
+        }
+      }
+      if (current > score) {
+        score = current;
+        winner = skill;
+        matches = currentMatches;
+      }
+    }
+    return score > 0 ? { skill: winner, matches } : { skill: null, matches: [] };
+  }
+
+  function buildRouteReason(text, skill, matches) {
+    if (!skill) {
+      return `No strong keyword match found for "${summarizeInput(text)}", so the workspace kept the current skill.`;
+    }
+    const preview = matches.slice(0, 4).join(", ");
+    return `Matched "${summarizeInput(text)}" to ${skill.name} via: ${preview || "skill metadata"}.`;
+  }
+
+  function getFilteredSkills() {
+    const search = state.searchText.trim().toLowerCase();
+    return allSkills().filter((skill) => {
+      const categoryOk = state.categoryFilter === "all" || skill.category === state.categoryFilter;
+      const platformOk = state.platformFilter === "all" || (skill.platform || []).includes(state.platformFilter);
+      const text = [
+        skill.name,
+        skill.category,
+        skill.summary,
+        skill.platform.join(" "),
+        skill.triggers.join(" "),
+        skill.capabilities.join(" ")
+      ]
+        .join(" ")
+        .toLowerCase();
+      const searchOk = !search || text.includes(search);
+      return categoryOk && platformOk && searchOk;
+    });
+  }
+
+  function allSkills() {
+    return [...window.SKILL_LIBRARY, ...(state.customSkills || [])];
+  }
+
+  function getSkillById(skillId) {
+    return allSkills().find((skill) => skill.id === skillId) || null;
+  }
+
+  function getActiveSkill() {
+    return getSkillById(state.activeSkillId) || allSkills()[0] || null;
+  }
+
+  function getActiveSession() {
+    return state.sessions.find((session) => session.id === state.activeSessionId) || state.sessions[0] || null;
+  }
+
+  function exportWorkspace() {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "nexscope-skill-console.workspace.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importSkillFiles(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    Promise.all(files.map(readTextFile))
+      .then((items) => {
+        const imported = items.map(({ name, text }) => parseSkillMarkdown(name, text));
+        const existingIds = new Set(allSkills().map((skill) => skill.id));
+        const merged = imported.map((skill) => {
+          let id = skill.id;
+          let suffix = 2;
+          while (existingIds.has(id)) {
+            id = `${skill.id}-${suffix}`;
+            suffix += 1;
+          }
+          existingIds.add(id);
+          return { ...skill, id };
+        });
+        state.customSkills = [...(state.customSkills || []), ...merged];
+        state.activeSkillId = merged[0].id;
+        state.lastRouteReason = `Imported ${merged.length} skill file${merged.length > 1 ? "s" : ""} into the local workspace.`;
+        persist();
+        renderAll();
+      })
+      .catch((error) => {
+        alert(`Skill 导入失败：${error.message}`);
+      })
+      .finally(() => {
+        event.target.value = "";
+      });
+  }
+
+  function readTextFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, text: String(reader.result || "") });
+      reader.onerror = () => reject(new Error(`无法读取 ${file.name}`));
+      reader.readAsText(file);
+    });
+  }
+
+  function parseSkillMarkdown(fileName, markdown) {
+    const normalized = markdown.replace(/\r\n/g, "\n");
+    const title = extractTitle(normalized) || fileName.replace(/\.(md|txt)$/i, "");
+    const lower = normalized.toLowerCase();
+    const platform = detectPlatforms(normalized);
+    const category = detectCategory(lower);
+    const capabilities = extractListAfterHeading(normalized, ["capabilities", "skills", "what it does", "能力", "核心能力"]);
+    const workflow = extractListAfterHeading(normalized, ["workflow", "process", "steps", "方法", "流程"]);
+    const outputs = extractListAfterHeading(normalized, ["output", "deliverables", "outputs", "输出"]);
+    const summary = extractSummary(normalized, title);
+    const triggers = buildTriggers(title, summary, platform, category, lower);
+    return {
+      id: slugify(title || fileName),
+      name: title,
+      category,
+      platform,
+      summary,
+      triggers,
+      capabilities: capabilities.length ? capabilities : ["Analyze the task using the imported skill instructions"],
+      workflow: workflow.length ? workflow : ["Read context", "Apply skill guidance", "Return structured recommendations"],
+      outputs: outputs.length ? outputs : ["Structured answer", "Action list", "Assumptions"],
+      starterPrompt: `请基于 ${title} 这个 skill 帮我处理当前电商任务。`,
+      systemPrompt: [
+        `You are operating under the imported skill: ${title}.`,
+        "Use the following skill document as guidance.",
+        normalized.slice(0, 6000)
+      ].join("\n\n"),
+      importedAt: new Date().toISOString(),
+      sourceFile: fileName
+    };
+  }
+
+  function extractTitle(markdown) {
+    const h1 = markdown.match(/^#\s+(.+)$/m);
+    if (h1) return h1[1].trim();
+    const firstHeading = markdown.match(/^#{2,6}\s+(.+)$/m);
+    return firstHeading ? firstHeading[1].trim() : "";
+  }
+
+  function extractSummary(markdown, title) {
+    const lines = markdown
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#") && !line.startsWith("-") && !line.startsWith("*"));
+    const summary = lines.find((line) => line.length > 40) || `Imported skill from ${title}.`;
+    return summary.length > 260 ? `${summary.slice(0, 260)}...` : summary;
+  }
+
+  function extractListAfterHeading(markdown, headings) {
+    const lines = markdown.split("\n");
+    const results = [];
+    let collecting = false;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const heading = trimmed.match(/^#{1,6}\s+(.+)$/);
+      if (heading) {
+        const text = heading[1].toLowerCase();
+        collecting = headings.some((item) => text.includes(item.toLowerCase()));
+        continue;
+      }
+      if (!collecting) continue;
+      if (/^[-*]\s+/.test(trimmed)) {
+        results.push(trimmed.replace(/^[-*]\s+/, "").trim());
+      }
+      if (results.length >= 8) break;
+    }
+    return results;
+  }
+
+  function detectPlatforms(text) {
+    const known = ["Amazon", "Walmart", "Shopify", "Etsy", "TikTok Shop", "eBay", "Meta", "Google", "DTC"];
+    const lower = text.toLowerCase();
+    const matches = known.filter((platform) => lower.includes(platform.toLowerCase()));
+    return matches.length ? matches : ["E-Commerce"];
+  }
+
+  function detectCategory(lower) {
+    const rules = [
+      ["finance", ["profit", "margin", "fee", "cost", "利润", "毛利"]],
+      ["marketing", ["ad", "ads", "campaign", "facebook", "meta", "tiktok", "广告", "投放"]],
+      ["content", ["listing", "copy", "title", "description", "文案", "标题"]],
+      ["research", ["competitor", "price", "market", "research", "竞品", "市场"]],
+      ["operations", ["inventory", "stock", "fulfillment", "库存", "履约"]],
+      ["strategy", ["growth", "strategy", "roadmap", "增长", "策略"]]
+    ];
+    const hit = rules.find(([, tokens]) => tokens.some((token) => lower.includes(token)));
+    return hit ? hit[0] : "imported";
+  }
+
+  function buildTriggers(title, summary, platform, category, lower) {
+    const seed = [title, summary, category, ...platform].join(" ").toLowerCase();
+    const tokens = seed
+      .split(/[^a-zA-Z0-9\u4e00-\u9fa5]+/)
+      .filter((token) => token.length > 2)
+      .slice(0, 18);
+    const extra = ["增长", "利润", "竞品", "listing", "广告", "库存", "价格"].filter((token) => lower.includes(token.toLowerCase()));
+    return [...new Set([...tokens, ...extra])];
+  }
+
+  function slugify(value) {
+    const slug = String(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return slug || `skill-${Date.now()}`;
+  }
+
+  function importWorkspace(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const imported = JSON.parse(String(reader.result || "{}"));
+        mergeImportedState(imported);
+        persist();
+        hydrateSettings();
+        renderAll();
+      } catch (error) {
+        alert(`导入失败：${error.message}`);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }
+
+  function mergeImportedState(imported) {
+    if (imported.settings) {
+      state.settings = {
+        ...window.DEFAULT_SETTINGS,
+        ...state.settings,
+        ...imported.settings
+      };
+    }
+    if (Array.isArray(imported.sessions)) {
+      state.sessions = imported.sessions;
+    }
+    if (Array.isArray(imported.customSkills)) {
+      state.customSkills = imported.customSkills;
+    }
+    if (imported.activeSkillId) {
+      state.activeSkillId = imported.activeSkillId;
+    }
+    if (imported.activeSessionId) {
+      state.activeSessionId = imported.activeSessionId;
+    }
+    if (typeof imported.searchText === "string") {
+      state.searchText = imported.searchText;
+    }
+    if (typeof imported.categoryFilter === "string") {
+      state.categoryFilter = imported.categoryFilter;
+    }
+    if (typeof imported.platformFilter === "string") {
+      state.platformFilter = imported.platformFilter;
+    }
+    if (typeof imported.lastRouteReason === "string") {
+      state.lastRouteReason = imported.lastRouteReason;
+    }
+  }
+
+  function loadWorkspace() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return clone(window.DEFAULT_WORKSPACE);
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      return {
+        ...clone(window.DEFAULT_WORKSPACE),
+        ...parsed,
+        settings: {
+          ...window.DEFAULT_SETTINGS,
+          ...parsed.settings
+        },
+        customSkills: Array.isArray(parsed.customSkills) ? parsed.customSkills : [],
+        platformFilter: parsed.platformFilter || "all",
+        sessions: Array.isArray(parsed.sessions) && parsed.sessions.length ? parsed.sessions : clone(window.DEFAULT_WORKSPACE.sessions)
+      };
+    } catch {
+      return clone(window.DEFAULT_WORKSPACE);
+    }
+  }
+
+  function persist() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function extractModelText(data) {
+    if (typeof data?.output_text === "string") return data.output_text;
+    if (Array.isArray(data?.choices) && data.choices[0]?.message?.content) {
+      return data.choices[0].message.content;
+    }
+    if (Array.isArray(data?.output)) {
+      return data.output
+        .map((item) => item?.content?.[0]?.text || item?.text || "")
+        .filter(Boolean)
+        .join("\n");
+    }
+    return "";
+  }
+
+  function formatDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(date);
+  }
+
+  function summarizeInput(text) {
+    const cleaned = text.replace(/\s+/g, " ").trim();
+    return cleaned.length > 48 ? `${cleaned.slice(0, 48)}...` : cleaned;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  }
+})();

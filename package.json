@@ -1,0 +1,14 @@
+{
+  "name": "amz-walm-skill",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Front-end eCommerce skill console for internal AI workflows.",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "check": "node --check app.js && node --check skills.manifest.js && node --check scripts/build.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+

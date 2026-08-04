@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nexscope Skill Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./skills.manifest.js" defer></script>
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">NS</div>
+          <div>
+            <div class="brand-title">Nexscope Skill Console</div>
+            <div class="brand-subtitle">Front-end-first eCommerce skill workbench</div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <label class="field">
+            <span>Model</span>
+            <input id="modelInput" type="text" list="modelOptions" />
+          </label>
+          <datalist id="modelOptions">
+            <option value="gpt-4.1-mini"></option>
+            <option value="gpt-4.1"></option>
+            <option value="gpt-4o-mini"></option>
+            <option value="gpt-4o"></option>
+          </datalist>
+          <label class="field api-key">
+            <span>API Key</span>
+            <input id="apiKeyInput" type="password" placeholder="sk-..." />
+          </label>
+          <label class="field endpoint">
+            <span>Endpoint</span>
+            <input id="endpointInput" type="url" />
+          </label>
+          <button id="saveSettingsBtn" class="btn primary">保存</button>
+          <button id="newSessionBtn" class="btn">新会话</button>
+          <button id="exportBtn" class="btn">导出</button>
+          <label class="btn file-btn">
+            导入工作区
+            <input id="importInput" type="file" accept="application/json" />
+          </label>
+          <label class="btn file-btn">
+            导入 Skill
+            <input id="skillImportInput" type="file" accept=".md,.txt,text/markdown,text/plain" multiple />
+          </label>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="panel sidebar">
+          <section class="section">
+            <div class="section-head">
+              <h2>Skills</h2>
+              <span id="skillCount" class="count"></span>
+            </div>
+            <label class="field search">
+              <span>Search</span>
+              <input id="searchInput" type="search" placeholder="搜索 skill / 平台 / 关键词" />
+            </label>
+            <div id="categoryTabs" class="tabs"></div>
+            <div id="platformTabs" class="tabs subtle"></div>
+          </section>
+
+          <section class="section grow">
+            <div class="section-head">
+              <h2>Library</h2>
+            </div>
+            <div id="skillList" class="list"></div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h2>Sessions</h2>
+            </div>
+            <div id="sessionList" class="list compact"></div>
+          </section>
+        </aside>
+
+        <section class="panel chat-panel">
+          <div class="chat-head">
+            <div>
+              <div id="activeSkillName" class="chat-title"></div>
+              <div id="activeSkillMeta" class="chat-meta"></div>
+            </div>
+            <div class="status-row">
+              <span id="storageState" class="badge"></span>
+              <span id="apiState" class="badge"></span>
+            </div>
+          </div>
+
+          <div id="messageList" class="message-list"></div>
+
+          <div class="composer">
+            <div id="quickPrompts" class="quick-prompts"></div>
+            <textarea id="messageInput" rows="5" placeholder="输入业务背景、数据、目标或直接提问..."></textarea>
+            <div class="composer-actions">
+              <button id="clearBtn" class="btn ghost">清空输入</button>
+              <button id="sendBtn" class="btn primary">发送</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel inspector">
+          <section class="section">
+            <div class="section-head">
+              <h2>Skill Brief</h2>
+            </div>
+            <div id="skillBrief" class="brief"></div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h2>Capabilities</h2>
+            </div>
+            <ul id="capabilityList" class="bullets"></ul>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h2>Workflow</h2>
+            </div>
+            <ol id="workflowList" class="steps"></ol>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h2>Routing</h2>
+            </div>
+            <div id="routingNote" class="note"></div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h2>Workspace</h2>
+            </div>
+            <div id="workspaceStats" class="stat-grid"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+  </body>
+</html>
