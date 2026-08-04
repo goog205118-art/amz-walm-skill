@@ -1,15 +1,15 @@
-# Nexscope Skill Console
+# 电商 Skill 工作台
 
 面向内部少数成员使用的电商 AI Skill 工作台。项目把 `eCommerce-Skills` 这类 Markdown skill 仓库封装成可检索、可路由、可对话、可保存的纯前端应用。
 
 ## 功能
 
-- Skill 目录、搜索、分类和平台筛选
+- 技能目录、搜索、分类和平台筛选
 - 会话创建、切换和本地保存
 - 轻量关键词路由和路由原因展示
-- OpenAI-compatible Chat Completions 前端接入
-- 无 API Key 时提供 demo fallback
-- `SKILL.md` 文件导入
+- 兼容 OpenAI Chat Completions 的前端 API 接入
+- 无 API 密钥时提供演示回退
+- `SKILL.md` 技能文件导入
 - 工作区 JSON 导入导出
 - Vercel 静态部署
 
@@ -28,8 +28,8 @@ npm run build
 
 Vercel 配置已包含在 `vercel.json`：
 
-- Build Command: `npm run build`
-- Output Directory: `dist`
+- 构建命令：`npm run build`
+- 输出目录：`dist`
 
 把仓库连接到 Vercel 后即可部署。
 
@@ -37,8 +37,8 @@ Vercel 配置已包含在 `vercel.json`：
 
 - [项目策划文档](docs/project-plan.md)
 - [执行文档](docs/execution-guide.md)
+- [使用逻辑文档](docs/usage-guide.md)
 
 ## 安全边界
 
-当前版本为前端直连 API，API Key 会保存在使用者自己的浏览器缓存中。它适合内部小范围使用，不建议作为公开 SaaS 直接开放。
-
+当前版本为前端直连 API，API 密钥会保存在使用者自己的浏览器缓存中。它适合内部小范围使用，不建议作为公开 SaaS 直接开放。

@@ -1,5 +1,15 @@
 (function () {
   const STORAGE_KEY = "nexscope-skill-console.workspace.v1";
+  const CATEGORY_LABELS = {
+    all: "全部分类",
+    strategy: "策略",
+    finance: "财务",
+    research: "调研",
+    content: "内容",
+    marketing: "营销",
+    operations: "运营",
+    imported: "导入"
+  };
 
   const els = {};
   const state = loadWorkspace();
@@ -97,7 +107,7 @@
     els.categoryTabs.innerHTML = categories
       .map((category) => {
         const active = state.categoryFilter === category ? "active" : "";
-        const label = category === "all" ? "All" : category;
+        const label = getCategoryLabel(category);
         return `<button class="tab ${active}" data-category="${escapeHtml(category)}">${escapeHtml(label)}</button>`;
       })
       .join("");
@@ -115,7 +125,7 @@
     els.platformTabs.innerHTML = platforms
       .map((platform) => {
         const active = state.platformFilter === platform ? "active" : "";
-        const label = platform === "all" ? "All platforms" : platform;
+        const label = platform === "all" ? "全部平台" : platform;
         return `<button class="tab ${active}" data-platform="${escapeHtml(platform)}">${escapeHtml(label)}</button>`;
       })
       .join("");
@@ -130,7 +140,7 @@
 
   function renderSkillList() {
     const filtered = getFilteredSkills();
-    els.skillCount.textContent = `${filtered.length} items`;
+    els.skillCount.textContent = `共 ${filtered.length} 个`;
     els.skillList.innerHTML = filtered
       .map((skill) => {
         const active = skill.id === state.activeSkillId ? "active" : "";
@@ -138,7 +148,7 @@
         return `
           <button class="item ${active}" data-skill="${escapeHtml(skill.id)}">
             <div class="item-title">${escapeHtml(skill.name)}</div>
-            <div class="item-meta">${escapeHtml(skill.category)} · ${escapeHtml(platform)}</div>
+            <div class="item-meta">${escapeHtml(getCategoryLabel(skill.category))} · ${escapeHtml(platform)}</div>
             <div class="item-desc">${escapeHtml(skill.summary)}</div>
           </button>
         `;
@@ -161,7 +171,7 @@
         return `
           <button class="item ${active}" data-session="${escapeHtml(session.id)}">
             <div class="item-title">${escapeHtml(session.title)}</div>
-            <div class="item-meta">${escapeHtml(skill ? skill.name : "Unknown skill")}</div>
+            <div class="item-meta">${escapeHtml(skill ? skill.name : "未知技能")}</div>
             <div class="item-desc">${escapeHtml(formatDate(session.updatedAt))}</div>
           </button>
         `;
@@ -185,7 +195,7 @@
     els.messageList.innerHTML = session.messages
       .map((message) => {
         const cls = message.role;
-        const meta = message.role === "assistant" ? "Assistant" : message.role === "user" ? "User" : "System";
+        const meta = message.role === "assistant" ? "助手" : message.role === "user" ? "用户" : "系统";
         return `
           <div class="message ${cls}">
             <div class="message-meta">${meta}</div>
@@ -217,20 +227,20 @@
   function renderInspector() {
     const skill = getActiveSkill();
     const session = getActiveSession();
-    els.activeSkillName.textContent = skill ? skill.name : "No skill selected";
-    els.activeSkillMeta.textContent = skill ? `${skill.category} · ${skill.platform.join(" / ")}` : "";
+    els.activeSkillName.textContent = skill ? skill.name : "未选择技能";
+    els.activeSkillMeta.textContent = skill ? `${getCategoryLabel(skill.category)} · ${skill.platform.join(" / ")}` : "";
     els.skillBrief.innerHTML = skill
       ? `
-        <div><strong>Summary:</strong> ${escapeHtml(skill.summary)}</div>
-        <div class="muted" style="margin-top:8px;"><strong>Starter:</strong> ${escapeHtml(skill.starterPrompt)}</div>
+        <div><strong>摘要：</strong>${escapeHtml(skill.summary)}</div>
+        <div class="muted" style="margin-top:8px;"><strong>起手提示：</strong>${escapeHtml(skill.starterPrompt)}</div>
       `
-      : `<div class="muted">Select a skill to inspect its brief.</div>`;
+      : `<div class="muted">请选择一个技能查看说明。</div>`;
 
     els.capabilityList.innerHTML = skill ? skill.capabilities.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "";
     els.workflowList.innerHTML = skill ? skill.workflow.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "";
     els.routingNote.innerHTML = session
-      ? `${escapeHtml(state.lastRouteReason || "Routing starts from lightweight keyword matching and falls back to the current skill.")}`
-      : "No active session.";
+      ? `${escapeHtml(state.lastRouteReason || "路由会先进行轻量关键词匹配，未命中时继续使用当前技能。")}`
+      : "暂无活动会话。";
   }
 
   function renderWorkspaceStats() {
@@ -239,18 +249,18 @@
     const customSkills = state.customSkills.length;
     const builtInSkills = window.SKILL_LIBRARY.length;
     els.workspaceStats.innerHTML = [
-      ["Built-in skills", builtInSkills],
-      ["Custom skills", customSkills],
-      ["Sessions", sessions],
-      ["Messages", messages]
+      ["内置技能", builtInSkills],
+      ["自定义技能", customSkills],
+      ["会话", sessions],
+      ["消息", messages]
     ]
       .map(([label, value]) => `<div class="stat"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`)
       .join("");
   }
 
   function updateStatus() {
-    els.storageState.textContent = "Browser cache on";
-    els.apiState.textContent = state.settings.apiKey ? "API key saved" : "Demo fallback";
+    els.storageState.textContent = "浏览器缓存已启用";
+    els.apiState.textContent = state.settings.apiKey ? "API 密钥已保存" : "演示模式";
   }
 
   function saveSettingsFromForm() {
@@ -369,7 +379,7 @@
       const data = await response.json();
       return extractModelText(data) || buildDemoReply(skill, userMessage);
     } catch (error) {
-      return `${buildDemoReply(skill, userMessage)}\n\n[API fallback] ${error.message}`;
+      return `${buildDemoReply(skill, userMessage)}\n\n[API 回退] ${error.message}`;
     }
   }
 
@@ -381,11 +391,11 @@
     const system = {
       role: "system",
       content: [
-        skill ? skill.systemPrompt : "You are a helpful e-commerce assistant.",
-        skill ? `Capabilities: ${(skill.capabilities || []).join("; ")}` : "",
-        skill ? `Required outputs: ${(skill.outputs || []).join("; ")}` : "",
-        "Return practical, structured, actionable output.",
-        "If information is missing, state assumptions explicitly."
+        skill ? skill.systemPrompt : "你是一个可靠的电商 AI 助手。",
+        skill ? `可用能力：${(skill.capabilities || []).join("；")}` : "",
+        skill ? `必须输出：${(skill.outputs || []).join("；")}` : "",
+        "请返回实用、结构化、可执行的内容。",
+        "如果信息不足，请明确写出你的假设。"
       ].filter(Boolean).join(" ")
     };
     return [system, ...recent];
@@ -442,10 +452,10 @@
 
   function buildRouteReason(text, skill, matches) {
     if (!skill) {
-      return `No strong keyword match found for "${summarizeInput(text)}", so the workspace kept the current skill.`;
+      return `没有为“${summarizeInput(text)}”找到强关键词匹配，因此工作区继续使用当前技能。`;
     }
     const preview = matches.slice(0, 4).join(", ");
-    return `Matched "${summarizeInput(text)}" to ${skill.name} via: ${preview || "skill metadata"}.`;
+    return `已将“${summarizeInput(text)}”路由到「${skill.name}」，命中依据：${preview || "技能元数据"}。`;
   }
 
   function getFilteredSkills() {
@@ -514,7 +524,7 @@
         });
         state.customSkills = [...(state.customSkills || []), ...merged];
         state.activeSkillId = merged[0].id;
-        state.lastRouteReason = `Imported ${merged.length} skill file${merged.length > 1 ? "s" : ""} into the local workspace.`;
+        state.lastRouteReason = `已导入 ${merged.length} 个技能文件到本地工作区。`;
         persist();
         renderAll();
       })
@@ -553,13 +563,13 @@
       platform,
       summary,
       triggers,
-      capabilities: capabilities.length ? capabilities : ["Analyze the task using the imported skill instructions"],
-      workflow: workflow.length ? workflow : ["Read context", "Apply skill guidance", "Return structured recommendations"],
-      outputs: outputs.length ? outputs : ["Structured answer", "Action list", "Assumptions"],
-      starterPrompt: `请基于 ${title} 这个 skill 帮我处理当前电商任务。`,
+      capabilities: capabilities.length ? capabilities : ["根据导入的技能说明分析当前任务"],
+      workflow: workflow.length ? workflow : ["读取任务背景", "套用技能方法", "返回结构化建议"],
+      outputs: outputs.length ? outputs : ["结构化回答", "行动清单", "关键假设"],
+      starterPrompt: `请基于「${title}」这个技能帮我处理当前电商任务。`,
       systemPrompt: [
-        `You are operating under the imported skill: ${title}.`,
-        "Use the following skill document as guidance.",
+        `你正在使用导入的技能：${title}。`,
+        "请以下方技能文档作为回答依据。",
         normalized.slice(0, 6000)
       ].join("\n\n"),
       importedAt: new Date().toISOString(),
@@ -579,7 +589,7 @@
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith("#") && !line.startsWith("-") && !line.startsWith("*"));
-    const summary = lines.find((line) => line.length > 40) || `Imported skill from ${title}.`;
+    const summary = lines.find((line) => line.length > 40) || `从 ${title} 导入的技能。`;
     return summary.length > 260 ? `${summary.slice(0, 260)}...` : summary;
   }
 
@@ -745,6 +755,10 @@
       hour: "2-digit",
       minute: "2-digit"
     }).format(date);
+  }
+
+  function getCategoryLabel(category) {
+    return CATEGORY_LABELS[category] || category || "未分类";
   }
 
   function summarizeInput(text) {

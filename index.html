@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Nexscope Skill Console</title>
+    <title>电商 Skill 工作台</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="./skills.manifest.js" defer></script>
     <script src="./app.js" defer></script>
@@ -12,15 +12,15 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-mark">NS</div>
+          <div class="brand-mark">AI</div>
           <div>
-            <div class="brand-title">Nexscope Skill Console</div>
-            <div class="brand-subtitle">Front-end-first eCommerce skill workbench</div>
+            <div class="brand-title">电商 Skill 工作台</div>
+            <div class="brand-subtitle">内部电商 AI 能力封装工具</div>
           </div>
         </div>
         <div class="toolbar">
           <label class="field">
-            <span>Model</span>
+            <span>模型</span>
             <input id="modelInput" type="text" list="modelOptions" />
           </label>
           <datalist id="modelOptions">
@@ -30,16 +30,16 @@
             <option value="gpt-4o"></option>
           </datalist>
           <label class="field api-key">
-            <span>API Key</span>
+            <span>API 密钥</span>
             <input id="apiKeyInput" type="password" placeholder="sk-..." />
           </label>
           <label class="field endpoint">
-            <span>Endpoint</span>
+            <span>接口地址</span>
             <input id="endpointInput" type="url" />
           </label>
-          <button id="saveSettingsBtn" class="btn primary">保存</button>
-          <button id="newSessionBtn" class="btn">新会话</button>
-          <button id="exportBtn" class="btn">导出</button>
+          <button id="saveSettingsBtn" class="btn primary">保存设置</button>
+          <button id="newSessionBtn" class="btn">新建会话</button>
+          <button id="exportBtn" class="btn">导出工作区</button>
           <label class="btn file-btn">
             导入工作区
             <input id="importInput" type="file" accept="application/json" />
@@ -55,12 +55,12 @@
         <aside class="panel sidebar">
           <section class="section">
             <div class="section-head">
-              <h2>Skills</h2>
+              <h2>技能筛选</h2>
               <span id="skillCount" class="count"></span>
             </div>
             <label class="field search">
-              <span>Search</span>
-              <input id="searchInput" type="search" placeholder="搜索 skill / 平台 / 关键词" />
+              <span>搜索</span>
+              <input id="searchInput" type="search" placeholder="搜索技能 / 平台 / 关键词" />
             </label>
             <div id="categoryTabs" class="tabs"></div>
             <div id="platformTabs" class="tabs subtle"></div>
@@ -68,14 +68,14 @@
 
           <section class="section grow">
             <div class="section-head">
-              <h2>Library</h2>
+              <h2>技能库</h2>
             </div>
             <div id="skillList" class="list"></div>
           </section>
 
           <section class="section">
             <div class="section-head">
-              <h2>Sessions</h2>
+              <h2>会话</h2>
             </div>
             <div id="sessionList" class="list compact"></div>
           </section>
@@ -108,35 +108,35 @@
         <aside class="panel inspector">
           <section class="section">
             <div class="section-head">
-              <h2>Skill Brief</h2>
+              <h2>技能说明</h2>
             </div>
             <div id="skillBrief" class="brief"></div>
           </section>
 
           <section class="section">
             <div class="section-head">
-              <h2>Capabilities</h2>
+              <h2>核心能力</h2>
             </div>
             <ul id="capabilityList" class="bullets"></ul>
           </section>
 
           <section class="section">
             <div class="section-head">
-              <h2>Workflow</h2>
+              <h2>执行流程</h2>
             </div>
             <ol id="workflowList" class="steps"></ol>
           </section>
 
           <section class="section">
             <div class="section-head">
-              <h2>Routing</h2>
+              <h2>路由状态</h2>
             </div>
             <div id="routingNote" class="note"></div>
           </section>
 
           <section class="section">
             <div class="section-head">
-              <h2>Workspace</h2>
+              <h2>工作区</h2>
             </div>
             <div id="workspaceStats" class="stat-grid"></div>
           </section>
