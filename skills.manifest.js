@@ -10277,8 +10277,11 @@ window.SKILL_LIBRARY = [
 
 window.DEFAULT_SETTINGS = {
   "protocol": "openai",
-  "model": "gpt-4.1-mini",
+  "model": "gpt-5.5",
   "models": [
+    "gpt-5.5",
+    "gpt-5.5-mini",
+    "gpt-5.5-vision",
     "gpt-4.1-mini",
     "gpt-4.1",
     "gpt-4o-mini",
@@ -10286,6 +10289,14 @@ window.DEFAULT_SETTINGS = {
   ],
   "endpoint": "https://api.openai.com/v1/chat/completions",
   "apiKey": "",
+  "capabilities": {
+    "vision": true,
+    "fileText": true,
+    "preserveAttachments": true,
+    "longContext": true,
+    "reasoning": true,
+    "autoContext": true
+  },
   "protocols": {
     "openai": {
       "endpoint": "https://api.openai.com/v1/chat/completions"
@@ -10306,6 +10317,10 @@ window.DEFAULT_WORKSPACE = {
   categoryFilter: "all",
   platformFilter: "all",
   openGroups: {},
+  ui: {
+    leftCollapsed: false,
+    rightCollapsed: false
+  },
   lastRouteReason: "全量 eCommerce Skills 工作区已就绪。",
   settings: window.DEFAULT_SETTINGS,
   customSkills: [],

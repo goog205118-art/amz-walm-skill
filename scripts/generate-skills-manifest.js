@@ -261,10 +261,18 @@ const defaultSkillId = skills.find((skill) => skill.id === "ecommerce-growth-str
 const manifest = `window.SKILL_LIBRARY = ${JSON.stringify(skills, null, 2)};\n\n` +
 `window.DEFAULT_SETTINGS = ${JSON.stringify({
   protocol: "openai",
-  model: "gpt-4.1-mini",
-  models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"],
+  model: "gpt-5.5",
+  models: ["gpt-5.5", "gpt-5.5-mini", "gpt-5.5-vision", "gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"],
   endpoint: "https://api.openai.com/v1/chat/completions",
   apiKey: "",
+  capabilities: {
+    vision: true,
+    fileText: true,
+    preserveAttachments: true,
+    longContext: true,
+    reasoning: true,
+    autoContext: true
+  },
   protocols: {
     openai: {
       endpoint: "https://api.openai.com/v1/chat/completions"
@@ -284,6 +292,10 @@ const manifest = `window.SKILL_LIBRARY = ${JSON.stringify(skills, null, 2)};\n\n
   categoryFilter: "all",
   platformFilter: "all",
   openGroups: {},
+  ui: {
+    leftCollapsed: false,
+    rightCollapsed: false
+  },
   lastRouteReason: "全量 eCommerce Skills 工作区已就绪。",
   settings: window.DEFAULT_SETTINGS,
   customSkills: [],

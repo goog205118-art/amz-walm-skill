@@ -14,14 +14,14 @@
   const PROTOCOL_PRESETS = {
     openai: {
       label: "OpenAI 协议",
-      model: "gpt-4.1-mini",
-      models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"],
+      model: "gpt-5.5",
+      models: ["gpt-5.5", "gpt-5.5-mini", "gpt-5.5-vision", "gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"],
       endpoint: "https://api.openai.com/v1/chat/completions"
     },
     gemini: {
       label: "Gemini 协议",
-      model: "gemini-2.5-flash",
-      models: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"],
+      model: "gemini-3.1-pro",
+      models: ["gemini-3.1-pro", "gemini-3.1-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
       endpoint: "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}"
     },
     anthropic: {
@@ -31,14 +31,27 @@
       endpoint: "https://api.anthropic.com/v1/messages"
     }
   };
+  const DEFAULT_CAPABILITIES = {
+    vision: true,
+    fileText: true,
+    preserveAttachments: true,
+    longContext: true,
+    reasoning: true,
+    autoContext: true
+  };
+  const MAX_ATTACHMENT_BYTES = 6 * 1024 * 1024;
+  const MAX_TEXT_CHARS = 60000;
 
   const els = {};
   const state = loadWorkspace();
+  let pendingAttachments = [];
 
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
     state.openGroups = state.openGroups && typeof state.openGroups === "object" ? state.openGroups : {};
+    state.ui = normalizeUiState(state.ui);
+    state.settings.capabilities = normalizeCapabilities(state.settings.capabilities);
     bindElements();
     bindEvents();
     hydrateSettings();
@@ -74,15 +87,27 @@
       "apiState",
       "messageList",
       "quickPrompts",
+      "attachmentTray",
       "messageInput",
+      "attachmentInput",
+      "attachBtn",
       "composerModelSelect",
       "clearBtn",
       "sendBtn",
+      "leftPanelToggle",
+      "rightPanelToggle",
       "skillBrief",
       "capabilityList",
       "workflowList",
       "routingNote",
-      "workspaceStats"
+      "workspaceStats",
+      "workspace",
+      "visionToggle",
+      "fileTextToggle",
+      "preserveAttachmentsToggle",
+      "longContextToggle",
+      "reasoningToggle",
+      "autoContextToggle"
     ].forEach((id) => {
       els[id] = document.getElementById(id);
     });
@@ -113,6 +138,10 @@
       els.messageInput.value = "";
       els.messageInput.focus();
     });
+    els.attachBtn.addEventListener("click", () => els.attachmentInput.click());
+    els.attachmentInput.addEventListener("change", handleAttachmentFiles);
+    els.leftPanelToggle.addEventListener("click", () => togglePanel("left"));
+    els.rightPanelToggle.addEventListener("click", () => togglePanel("right"));
     els.sendBtn.addEventListener("click", sendMessage);
     els.composerModelSelect.addEventListener("change", () => {
       state.settings.model = els.composerModelSelect.value;
@@ -139,6 +168,7 @@
   function hydrateSettings() {
     state.settings.protocol = normalizeProtocol(state.settings.protocol);
     state.settings.models = normalizeModelList(state.settings.models, state.settings.model, state.settings.protocol);
+    state.settings.capabilities = normalizeCapabilities(state.settings.capabilities);
     els.protocolInput.value = state.settings.protocol;
     renderModelOptions(state.settings.model, state.settings.models);
     renderComposerModelOptions(state.settings.model, state.settings.models);
@@ -148,6 +178,8 @@
     els.apiKeyInput.value = state.settings.apiKey;
     els.endpointInput.value = state.settings.endpoint;
     els.searchInput.value = state.searchText;
+    hydrateCapabilitySettings();
+    applyLayoutState();
   }
 
   function renderAll() {
@@ -158,6 +190,7 @@
     renderMessages();
     renderInspector();
     renderQuickPrompts();
+    renderAttachmentTray();
     renderWorkspaceStats();
     updateStatus();
   }
@@ -283,16 +316,36 @@
       .map((message) => {
         const cls = message.role;
         const meta = message.role === "assistant" ? "助手" : message.role === "user" ? "用户" : "系统";
+        const avatar = message.role === "assistant" ? "AI" : message.role === "user" ? "你" : "";
+        const attachments = renderMessageAttachments(message.attachments);
         return `
           <div class="message ${cls}">
-            <div class="message-meta">${meta}</div>
-            <div>${escapeHtml(message.content)}</div>
+            <div class="message-avatar">${avatar}</div>
+            <div class="message-body">
+              <div class="message-meta">${meta}</div>
+              <div class="message-content">${escapeHtml(message.content)}</div>
+              ${attachments}
+            </div>
           </div>
         `;
       })
       .join("");
 
     els.messageList.scrollTop = els.messageList.scrollHeight;
+  }
+
+  function renderMessageAttachments(attachments) {
+    if (!Array.isArray(attachments) || !attachments.length) return "";
+    return `
+      <div class="message-attachments">
+        ${attachments
+          .map((attachment) => {
+            const label = `${attachment.name || "附件"} · ${formatBytes(attachment.size || 0)}`;
+            return `<span class="message-attachment" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+          })
+          .join("")}
+      </div>
+    `;
   }
 
   function renderQuickPrompts() {
@@ -316,6 +369,32 @@
       button.addEventListener("click", () => {
         els.messageInput.value = button.dataset.prompt;
         els.messageInput.focus();
+      });
+    });
+  }
+
+  function renderAttachmentTray() {
+    if (!pendingAttachments.length) {
+      els.attachmentTray.classList.add("hidden");
+      els.attachmentTray.innerHTML = "";
+      return;
+    }
+    els.attachmentTray.classList.remove("hidden");
+    els.attachmentTray.innerHTML = pendingAttachments
+      .map((attachment) => {
+        const label = `${attachment.name} · ${formatBytes(attachment.size)}`;
+        return `
+          <div class="attachment-chip" title="${escapeHtml(label)}">
+            <span>${escapeHtml(label)}</span>
+            <button type="button" data-remove-attachment="${escapeHtml(attachment.id)}" aria-label="移除附件">×</button>
+          </div>
+        `;
+      })
+      .join("");
+    els.attachmentTray.querySelectorAll("button[data-remove-attachment]").forEach((button) => {
+      button.addEventListener("click", () => {
+        pendingAttachments = pendingAttachments.filter((item) => item.id !== button.dataset.removeAttachment);
+        renderAttachmentTray();
       });
     });
   }
@@ -363,6 +442,92 @@
     els.apiState.textContent = state.settings.apiKey ? `${protocol.label} 已保存` : "演示模式";
   }
 
+  function applyLayoutState() {
+    state.ui = normalizeUiState(state.ui);
+    els.workspace.classList.toggle("left-collapsed", state.ui.leftCollapsed);
+    els.workspace.classList.toggle("right-collapsed", state.ui.rightCollapsed);
+    els.leftPanelToggle.textContent = state.ui.leftCollapsed ? "›" : "‹";
+    els.rightPanelToggle.textContent = state.ui.rightCollapsed ? "‹" : "›";
+    els.leftPanelToggle.setAttribute("aria-label", state.ui.leftCollapsed ? "展开技能栏" : "收起技能栏");
+    els.rightPanelToggle.setAttribute("aria-label", state.ui.rightCollapsed ? "展开说明栏" : "收起说明栏");
+  }
+
+  function togglePanel(side) {
+    state.ui = normalizeUiState(state.ui);
+    if (side === "left") {
+      state.ui.leftCollapsed = !state.ui.leftCollapsed;
+    }
+    if (side === "right") {
+      state.ui.rightCollapsed = !state.ui.rightCollapsed;
+    }
+    persist();
+    applyLayoutState();
+  }
+
+  function hydrateCapabilitySettings() {
+    const capabilities = getCapabilitySettings();
+    els.visionToggle.checked = capabilities.vision;
+    els.fileTextToggle.checked = capabilities.fileText;
+    els.preserveAttachmentsToggle.checked = capabilities.preserveAttachments;
+    els.longContextToggle.checked = capabilities.longContext;
+    els.reasoningToggle.checked = capabilities.reasoning;
+    els.autoContextToggle.checked = capabilities.autoContext;
+  }
+
+  function readCapabilitySettingsFromForm() {
+    return {
+      vision: els.visionToggle.checked,
+      fileText: els.fileTextToggle.checked,
+      preserveAttachments: els.preserveAttachmentsToggle.checked,
+      longContext: els.longContextToggle.checked,
+      reasoning: els.reasoningToggle.checked,
+      autoContext: els.autoContextToggle.checked
+    };
+  }
+
+  async function handleAttachmentFiles(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    const next = [];
+    for (const file of files) {
+      next.push(await buildAttachment(file));
+    }
+    pendingAttachments = [...pendingAttachments, ...next];
+    renderAttachmentTray();
+  }
+
+  async function buildAttachment(file) {
+    const type = file.type || guessMimeType(file.name);
+    const isImage = type.startsWith("image/");
+    const isText = isTextLikeFile(file.name, type);
+    const attachment = {
+      id: `att-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: file.name,
+      type,
+      size: file.size,
+      kind: isImage ? "image" : isText ? "text" : "file"
+    };
+
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      attachment.notice = "文件超过前端直传上限，已保留文件信息。";
+      return attachment;
+    }
+
+    if (isText) {
+      const text = await readFileAsText(file);
+      attachment.text = text.slice(0, MAX_TEXT_CHARS);
+      attachment.truncated = text.length > MAX_TEXT_CHARS;
+      return attachment;
+    }
+
+    if (isImage || shouldPreserveBinaryAttachment(type)) {
+      const dataUrl = await readFileAsDataUrl(file);
+      attachment.dataUrl = dataUrl;
+      attachment.base64 = dataUrl.split(",")[1] || "";
+    }
+    return attachment;
+  }
+
   function openSettings() {
     hydrateSettings();
     els.settingsModal.classList.remove("hidden");
@@ -382,6 +547,7 @@
     state.settings.model = selectedModel;
     state.settings.apiKey = els.apiKeyInput.value.trim();
     state.settings.endpoint = els.endpointInput.value.trim() || getProtocolConfig(protocol).endpoint;
+    state.settings.capabilities = readCapabilitySettingsFromForm();
     persist();
     hydrateSettings();
     updateStatus();
@@ -438,30 +604,34 @@
 
   async function sendMessage() {
     const input = els.messageInput.value.trim();
-    if (!input) return;
+    const attachments = pendingAttachments.map((attachment) => ({ ...attachment }));
+    if (!input && !attachments.length) return;
+    const userContent = input || "请分析我上传的附件，并给出可执行建议。";
 
-    const routed = routeSkill(input);
+    const routed = routeSkill(userContent);
     const routedSkill = routed.skill || getActiveSkill();
     if (routedSkill && routedSkill.id !== state.activeSkillId) {
       state.activeSkillId = routedSkill.id;
     }
-    state.lastRouteReason = buildRouteReason(input, routedSkill, routed.matches);
+    state.lastRouteReason = buildRouteReason(userContent, routedSkill, routed.matches);
 
     const session = getActiveSession();
     if (!session) return;
 
     session.skillId = state.activeSkillId;
-    session.messages.push({ role: "user", content: input });
+    session.messages.push({ role: "user", content: userContent, attachments });
     session.updatedAt = new Date().toISOString();
     if (!session.title || session.title === "新会话") {
-      session.title = input.slice(0, 24);
+      session.title = userContent.slice(0, 24);
     }
     els.messageInput.value = "";
+    pendingAttachments = [];
+    els.attachmentInput.value = "";
     persist();
     renderAll();
 
     const skill = getActiveSkill();
-    const reply = await generateReply(session, skill, input);
+    const reply = await generateReply(session, skill, session.messages.at(-1));
     session.messages.push({ role: "assistant", content: reply });
     session.updatedAt = new Date().toISOString();
     persist();
@@ -489,10 +659,13 @@
     }
   }
 
-  function buildPromptMessages(session, skill, userMessage) {
-    const recent = session.messages.slice(-8).map((message) => ({
+  function buildPromptMessages(session, skill) {
+    const capabilities = getCapabilitySettings();
+    const contextDepth = capabilities.longContext ? 16 : 8;
+    const recent = session.messages.slice(-contextDepth).map((message) => ({
       role: message.role,
-      content: message.content
+      content: message.content,
+      attachments: message.attachments || []
     }));
     const system = {
       role: "system",
@@ -500,7 +673,9 @@
         skill ? skill.systemPrompt : "你是一个可靠的电商 AI 助手。",
         skill ? `可用能力：${(skill.capabilities || []).join("；")}` : "",
         skill ? `必须输出：${(skill.outputs || []).join("；")}` : "",
+        `模型能力策略：图片识别=${capabilities.vision ? "开启" : "关闭"}；文件文本识别=${capabilities.fileText ? "开启" : "关闭"}；保留原始多模态输入=${capabilities.preserveAttachments ? "开启" : "关闭"}；长上下文=${capabilities.longContext ? "开启" : "关闭"}；深度推理=${capabilities.reasoning ? "开启" : "关闭"}。`,
         "请返回实用、结构化、可执行的内容。",
+        capabilities.reasoning ? "复杂任务先做关键判断，再给结论和步骤；不要因为前端封装而省略模型原生能力。" : "",
         "如果信息不足，请明确写出你的假设。"
       ].filter(Boolean).join(" ")
     };
@@ -508,11 +683,16 @@
   }
 
   function buildDemoReply(skill, userMessage) {
+    const content = typeof userMessage === "string" ? userMessage : userMessage?.content || "";
+    const attachments = Array.isArray(userMessage?.attachments) ? userMessage.attachments : [];
     const lines = [];
     lines.push(`已路由到：${skill ? skill.name : "默认助手"}`);
     lines.push("");
     lines.push("判断：");
-    lines.push(`- 你的输入重点是：${summarizeInput(userMessage)}`);
+    lines.push(`- 你的输入重点是：${summarizeInput(content)}`);
+    if (attachments.length) {
+      lines.push(`- 已接收附件：${attachments.map((item) => item.name).join("、")}`);
+    }
     lines.push("- 我会先用本地规则给出一个可执行框架。");
     lines.push("");
     lines.push("建议：");
@@ -818,6 +998,10 @@
       };
       state.settings.protocol = normalizeProtocol(state.settings.protocol);
       state.settings.models = normalizeModelList(state.settings.models, state.settings.model, state.settings.protocol);
+      state.settings.capabilities = normalizeCapabilities(state.settings.capabilities);
+    }
+    if (imported.ui) {
+      state.ui = normalizeUiState(imported.ui);
     }
     if (Array.isArray(imported.sessions)) {
       state.sessions = imported.sessions;
@@ -851,6 +1035,8 @@
       const initial = clone(window.DEFAULT_WORKSPACE);
       initial.settings.protocol = normalizeProtocol(initial.settings.protocol);
       initial.settings.models = normalizeModelList(initial.settings.models, initial.settings.model, initial.settings.protocol);
+      initial.settings.capabilities = normalizeCapabilities(initial.settings.capabilities);
+      initial.ui = normalizeUiState(initial.ui);
       return initial;
     }
     try {
@@ -863,17 +1049,21 @@
           ...parsed.settings
         },
         customSkills: Array.isArray(parsed.customSkills) ? parsed.customSkills : [],
+        ui: normalizeUiState(parsed.ui),
         platformFilter: parsed.platformFilter || "all",
         openGroups: parsed.openGroups && typeof parsed.openGroups === "object" ? parsed.openGroups : {},
         sessions: Array.isArray(parsed.sessions) && parsed.sessions.length ? parsed.sessions : clone(window.DEFAULT_WORKSPACE.sessions)
       };
       workspace.settings.protocol = normalizeProtocol(workspace.settings.protocol);
       workspace.settings.models = normalizeModelList(workspace.settings.models, workspace.settings.model, workspace.settings.protocol);
+      workspace.settings.capabilities = normalizeCapabilities(workspace.settings.capabilities);
       return workspace;
     } catch {
       const fallback = clone(window.DEFAULT_WORKSPACE);
       fallback.settings.protocol = normalizeProtocol(fallback.settings.protocol);
       fallback.settings.models = normalizeModelList(fallback.settings.models, fallback.settings.model, fallback.settings.protocol);
+      fallback.settings.capabilities = normalizeCapabilities(fallback.settings.capabilities);
+      fallback.ui = normalizeUiState(fallback.ui);
       return fallback;
     }
   }
@@ -894,7 +1084,7 @@
         .filter((message) => message.role !== "system")
         .map((message) => ({
           role: message.role === "assistant" ? "model" : "user",
-          parts: [{ text: message.content }]
+          parts: buildGeminiParts(message, getCapabilitySettings())
         }));
       return {
         method: "POST",
@@ -914,7 +1104,7 @@
         .filter((message) => message.role !== "system")
         .map((message) => ({
           role: message.role === "assistant" ? "assistant" : "user",
-          content: message.content
+          content: buildAnthropicContent(message, getCapabilitySettings())
         }));
       return {
         method: "POST",
@@ -943,10 +1133,88 @@
       },
       body: JSON.stringify({
         model,
-        messages,
-        temperature: 0.3
+        messages: messages.map((message) => ({
+          role: message.role,
+          content: buildOpenAiContent(message, getCapabilitySettings())
+        })),
+        temperature: getCapabilitySettings().reasoning ? 0.2 : 0.3
       })
     };
+  }
+
+  function buildOpenAiContent(message, capabilities) {
+    if (message.role === "system" || message.role === "assistant") {
+      return buildMessageTextWithAttachments(message, capabilities, "openai");
+    }
+    const parts = [{ type: "text", text: buildMessageTextWithAttachments(message, capabilities, "openai") }];
+    if (capabilities.vision && capabilities.preserveAttachments) {
+      for (const attachment of message.attachments || []) {
+        if (attachment.kind === "image" && attachment.dataUrl) {
+          parts.push({ type: "image_url", image_url: { url: attachment.dataUrl } });
+        }
+      }
+    }
+    return parts.length > 1 ? parts : parts[0].text;
+  }
+
+  function buildGeminiParts(message, capabilities) {
+    const parts = [{ text: buildMessageTextWithAttachments(message, capabilities, "gemini") }];
+    if (!capabilities.preserveAttachments) return parts;
+    for (const attachment of message.attachments || []) {
+      const canAttachImage = attachment.kind === "image" && capabilities.vision;
+      const canAttachFile = attachment.kind !== "image" && capabilities.fileText;
+      if ((canAttachImage || canAttachFile) && attachment.base64) {
+        parts.push({
+          inlineData: {
+            mimeType: attachment.type || "application/octet-stream",
+            data: attachment.base64
+          }
+        });
+      }
+    }
+    return parts;
+  }
+
+  function buildAnthropicContent(message, capabilities) {
+    if (message.role === "assistant") {
+      return buildMessageTextWithAttachments(message, capabilities, "anthropic");
+    }
+    const content = [{ type: "text", text: buildMessageTextWithAttachments(message, capabilities, "anthropic") }];
+    if (capabilities.vision && capabilities.preserveAttachments) {
+      for (const attachment of message.attachments || []) {
+        if (attachment.kind === "image" && attachment.base64) {
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: attachment.type || "image/png",
+              data: attachment.base64
+            }
+          });
+        }
+      }
+    }
+    return content;
+  }
+
+  function buildMessageTextWithAttachments(message, capabilities, protocol) {
+    const content = message.content || "";
+    const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+    if (!attachments.length) return content;
+    const lines = [content, "", "附件上下文："];
+    for (const attachment of attachments) {
+      lines.push(`- ${attachment.name} (${attachment.type || "未知类型"}, ${formatBytes(attachment.size || 0)})`);
+      if (attachment.text && capabilities.fileText) {
+        lines.push(`  文本内容：${attachment.text}${attachment.truncated ? "\n  [已截断，仅传入前段内容]" : ""}`);
+      } else if (attachment.kind === "image" && capabilities.vision && capabilities.preserveAttachments) {
+        lines.push(`  图片已按 ${protocol} 多模态格式附加。`);
+      } else if (attachment.base64 && capabilities.fileText && capabilities.preserveAttachments && protocol === "gemini") {
+        lines.push("  文件已按 Gemini inlineData 附加。");
+      } else {
+        lines.push(`  ${attachment.notice || "当前协议将以文件信息摘要传入。"}`);
+      }
+    }
+    return lines.join("\n");
   }
 
   function extractModelText(data, protocol) {
@@ -1034,6 +1302,25 @@
     return [...new Set(merged)];
   }
 
+  function getCapabilitySettings() {
+    state.settings.capabilities = normalizeCapabilities(state.settings.capabilities);
+    return state.settings.capabilities;
+  }
+
+  function normalizeCapabilities(capabilities) {
+    return {
+      ...DEFAULT_CAPABILITIES,
+      ...(capabilities && typeof capabilities === "object" ? capabilities : {})
+    };
+  }
+
+  function normalizeUiState(ui) {
+    return {
+      leftCollapsed: Boolean(ui?.leftCollapsed),
+      rightCollapsed: Boolean(ui?.rightCollapsed)
+    };
+  }
+
   function normalizeProtocol(protocol) {
     return PROTOCOL_PRESETS[protocol] ? protocol : "openai";
   }
@@ -1053,6 +1340,57 @@
       url = url.replaceAll(`{${key}}`, encodeURIComponent(value || ""));
     });
     return url;
+  }
+
+  function shouldPreserveBinaryAttachment(type) {
+    const capabilities = getCapabilitySettings();
+    return Boolean(capabilities.fileText && capabilities.preserveAttachments && normalizeProtocol(state.settings.protocol) === "gemini" && type);
+  }
+
+  function isTextLikeFile(name, type) {
+    const lower = String(name || "").toLowerCase();
+    return (
+      type.startsWith("text/") ||
+      ["application/json", "application/xml", "application/x-ndjson"].includes(type) ||
+      [".txt", ".md", ".csv", ".json", ".xml", ".html", ".css", ".js", ".ts", ".log"].some((suffix) => lower.endsWith(suffix))
+    );
+  }
+
+  function guessMimeType(name) {
+    const lower = String(name || "").toLowerCase();
+    if (lower.endsWith(".pdf")) return "application/pdf";
+    if (lower.endsWith(".json")) return "application/json";
+    if (lower.endsWith(".csv")) return "text/csv";
+    if (lower.endsWith(".md")) return "text/markdown";
+    if (lower.endsWith(".txt")) return "text/plain";
+    if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    return "application/octet-stream";
+  }
+
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error(`无法读取 ${file.name}`));
+      reader.readAsText(file);
+    });
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error(`无法读取 ${file.name}`));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function formatBytes(value) {
+    const bytes = Number(value) || 0;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
 
   function summarizeInput(text) {
