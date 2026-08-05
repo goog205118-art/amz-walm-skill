@@ -45,6 +45,7 @@ button {
 .file-btn,
 .icon-btn,
 .composer-icon,
+.input-expand-btn,
 .send-icon,
 .composer-model {
   display: inline-flex;
@@ -861,6 +862,63 @@ summary.section-head::-webkit-details-marker {
   color: var(--text);
 }
 
+.message-content p {
+  margin: 0 0 10px;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message-content strong {
+  font-weight: 700;
+}
+
+.message-content code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(31, 122, 91, 0.08);
+  color: var(--accent);
+  font-size: 0.92em;
+}
+
+.md-heading {
+  margin: 18px 0 8px;
+  font-weight: 760;
+  font-size: 1.02em;
+  line-height: 1.45;
+}
+
+.md-divider {
+  height: 1px;
+  margin: 18px 0;
+  background: var(--line);
+}
+
+.md-list {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.md-list li {
+  margin: 4px 0;
+}
+
+.md-numbered {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+  margin: 5px 0;
+}
+
+.md-numbered span {
+  color: var(--muted);
+}
+
+.md-numbered p {
+  margin: 0;
+}
+
 .thinking {
   display: inline-flex;
   align-items: center;
@@ -1124,6 +1182,7 @@ summary.section-head::-webkit-details-marker {
 }
 
 .composer-icon,
+.input-expand-btn,
 .send-icon {
   height: 38px;
   border-radius: 19px;
@@ -1150,6 +1209,7 @@ summary.section-head::-webkit-details-marker {
   cursor: pointer;
 }
 
+.input-expand-btn,
 .send-icon {
   background: var(--accent);
   border-color: var(--accent);
@@ -1160,6 +1220,20 @@ summary.section-head::-webkit-details-marker {
   padding: 0;
 }
 
+.input-expand-btn {
+  background: var(--panel-alt);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.input-expand-btn:hover,
+.input-expand-btn.active {
+  color: var(--accent);
+  border-color: rgba(31, 122, 91, 0.35);
+  background: #eef5f1;
+}
+
+.input-expand-btn svg,
 .send-icon svg {
   width: 20px;
   height: 20px;
@@ -1404,7 +1478,7 @@ summary.section-head::-webkit-details-marker {
 .workspace.left-collapsed.right-collapsed {
   height: 100vh;
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 68px;
+  grid-template-columns: 52px minmax(0, 1fr);
   gap: 0;
   padding: 0;
   overflow: hidden;
@@ -1420,15 +1494,14 @@ summary.section-head::-webkit-details-marker {
   background: transparent;
 }
 
-.nav-rail,
-.right-dock {
+.nav-rail {
   position: relative;
   z-index: 8;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 12px 8px;
+  gap: 9px;
+  padding: 10px 6px;
   overflow: visible;
   background: rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(16px);
@@ -1438,30 +1511,26 @@ summary.section-head::-webkit-details-marker {
   border-right: 1px solid var(--line);
 }
 
-.right-dock {
-  border-left: 1px solid var(--line);
-}
-
 .rail-brand {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 6px;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 4px;
 }
 
 .rail-brand .brand-mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 13px;
 }
 
-.rail-action,
-.right-dock .tool-btn {
+.rail-action {
   position: relative;
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -1472,37 +1541,38 @@ summary.section-head::-webkit-details-marker {
 }
 
 .rail-action:hover,
-.rail-action.active,
-.right-dock .tool-btn:hover,
-.right-dock .tool-btn.active {
+.rail-action.active {
   background: #eef5f1;
   color: var(--accent);
 }
 
-.right-dock .tool-btn.primary {
+.rail-action.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #ffffff;
 }
 
-.right-dock .tool-btn.primary:hover {
+.rail-action.primary:hover {
   background: #17694d;
   color: #ffffff;
 }
 
-.rail-action .tool-icon svg,
-.right-dock .tool-icon svg {
-  width: 20px;
-  height: 20px;
+.rail-action .tool-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.rail-action .tool-icon svg {
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.85;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.rail-action[data-tooltip]::after,
-.right-dock .tool-btn[data-tooltip]::after {
+.rail-action[data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
   top: 50%;
@@ -1525,18 +1595,20 @@ summary.section-head::-webkit-details-marker {
   transform: translateY(-50%) translateX(-3px);
 }
 
-.right-dock .tool-btn[data-tooltip]::after {
-  right: calc(100% + 10px);
-  left: auto;
-  transform: translateY(-50%) translateX(3px);
-}
-
 .rail-action[data-tooltip]:hover::after,
-.rail-action[data-tooltip]:focus-visible::after,
-.right-dock .tool-btn[data-tooltip]:hover::after,
-.right-dock .tool-btn[data-tooltip]:focus-visible::after {
+.rail-action[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translateY(-50%) translateX(0);
+}
+
+.rail-action.file-btn {
+  min-height: 34px;
+  padding: 0;
+  overflow: visible;
+}
+
+.rail-action.file-btn input {
+  z-index: 2;
 }
 
 .ghost-control {
@@ -1548,28 +1620,21 @@ summary.section-head::-webkit-details-marker {
 }
 
 .rail-initial {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: #0b8fd8;
   color: #ffffff;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 12px;
 }
 
-.dock-tools {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.dock-separator {
-  width: 28px;
+.rail-separator {
+  width: 24px;
   height: 1px;
-  margin: 2px 0;
+  margin: 1px 0;
   background: var(--line);
 }
 
@@ -1678,6 +1743,18 @@ summary.section-head::-webkit-details-marker {
 .composer-box textarea {
   min-height: 38px;
   padding: 8px 0 0;
+  transition: height 0.12s ease;
+}
+
+.chat-panel.input-expanded .composer-box {
+  align-items: stretch;
+  border-radius: 18px;
+  padding-top: 12px;
+}
+
+.chat-panel.input-expanded .composer-box textarea {
+  min-height: 150px;
+  padding-top: 4px;
 }
 
 .composer-model {
@@ -1685,16 +1762,17 @@ summary.section-head::-webkit-details-marker {
   border-radius: 999px;
 }
 
+.input-expand-btn,
 .send-icon {
   width: 38px;
   min-width: 38px;
   border-radius: 999px;
 }
 
-.right-dock .side-content {
+.nav-rail .side-content {
   position: absolute;
   top: 14px;
-  right: calc(100% + 10px);
+  left: calc(100% + 10px);
   bottom: 14px;
   z-index: 32;
   width: min(330px, calc(100vw - 170px));
@@ -1709,11 +1787,15 @@ summary.section-head::-webkit-details-marker {
   box-shadow: 0 18px 46px rgba(17, 24, 39, 0.14);
 }
 
-.workspace.right-collapsed .right-dock .side-content {
+.workspace.right-collapsed .nav-rail .side-content {
   display: none;
 }
 
-.right-dock .panel-toggle-row {
+.workspace.left-collapsed:not(.right-collapsed) .nav-rail .side-content {
+  display: flex;
+}
+
+.nav-rail .panel-toggle-row {
   display: none;
 }
 
@@ -1759,7 +1841,7 @@ summary.section-head::-webkit-details-marker {
   .workspace.left-collapsed,
   .workspace.right-collapsed,
   .workspace.left-collapsed.right-collapsed {
-    grid-template-columns: 60px minmax(0, 1fr) 62px;
+    grid-template-columns: 50px minmax(0, 1fr);
   }
 }
 
@@ -1768,26 +1850,24 @@ summary.section-head::-webkit-details-marker {
   .workspace.left-collapsed,
   .workspace.right-collapsed,
   .workspace.left-collapsed.right-collapsed {
-    grid-template-columns: 52px minmax(0, 1fr) 52px;
+    grid-template-columns: 46px minmax(0, 1fr);
   }
 
-  .nav-rail,
-  .right-dock {
-    padding: 10px 5px;
-    gap: 8px;
+  .nav-rail {
+    padding: 8px 5px;
+    gap: 7px;
   }
 
-  .rail-action,
-  .right-dock .tool-btn {
-    width: 38px;
-    height: 38px;
-    min-width: 38px;
+  .rail-action {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
   }
 
   .rail-brand .brand-mark {
-    width: 34px;
-    height: 34px;
-    font-size: 13px;
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
   }
 
   .composer-box {
@@ -1826,8 +1906,8 @@ summary.section-head::-webkit-details-marker {
   }
 
   .session-flyout,
-  .right-dock .side-content {
-    width: calc(100vw - 112px);
+  .nav-rail .side-content {
+    width: calc(100vw - 72px);
     top: 10px;
     bottom: 10px;
   }

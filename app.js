@@ -46,6 +46,8 @@
   const state = loadWorkspace();
   let pendingAttachments = [];
   let isSending = false;
+  let inputExpanded = false;
+  let streamFrame = 0;
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -95,6 +97,7 @@
       "attachmentTray",
       "messageInput",
       "composerModelSelect",
+      "expandInputBtn",
       "sendBtn",
       "chatPanel",
       "leftPanelToggle",
@@ -143,11 +146,24 @@
       persist();
       renderAll();
     });
+    els.messageInput.addEventListener("input", syncComposerHeight);
     els.messageInput.addEventListener("keydown", (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      if (event.isComposing || event.key !== "Enter") return;
+      if (!inputExpanded && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+        return;
+      }
+      if (inputExpanded && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
         sendMessage();
       }
     });
+    els.expandInputBtn.addEventListener("click", toggleInputExpanded);
+    els.messageList.addEventListener("scroll", () => {
+      if (!isSending) return;
+      els.messageList.dataset.userDetached = String(!isMessageListNearBottom());
+    }, { passive: true });
     bindDropZone(els.chatPanel);
     bindDropZone(els.messageInput);
     els.leftPanelToggle.addEventListener("click", () => togglePanel("left"));
@@ -212,6 +228,7 @@
     renderAttachmentTray();
     renderWorkspaceStats();
     updateStatus();
+    syncComposerHeight();
   }
 
   function renderCategories() {
@@ -326,12 +343,14 @@
     });
   }
 
-  function renderMessages() {
+  function renderMessages(options = {}) {
     const session = getActiveSession();
     if (!session) {
       els.messageList.innerHTML = "";
       return;
     }
+    session.messages.forEach(ensureMessageId);
+    const shouldFollow = options.forceScroll || shouldFollowMessages();
 
     els.messageList.innerHTML = session.messages
       .map((message) => {
@@ -341,9 +360,9 @@
         const attachments = renderMessageAttachments(message.attachments);
         const content = message.loading
           ? `<div class="thinking"><span></span><span></span><span></span><em>${escapeHtml(message.status || "正在思考")}</em></div>`
-          : `<div class="message-content">${escapeHtml(message.content)}</div>`;
+          : `<div class="message-content">${renderRichText(message.content)}</div>`;
         return `
-          <div class="message ${cls}">
+          <div class="message ${cls}" data-message-id="${escapeHtml(message.id)}">
             <div class="message-avatar">${avatar}</div>
             <div class="message-body">
               <div class="message-meta">${meta}</div>
@@ -355,7 +374,65 @@
       })
       .join("");
 
+    if (shouldFollow) {
+      scrollMessagesToBottom();
+    }
+  }
+
+  function updateMessageContent(message, content) {
+    ensureMessageId(message);
+    const shouldFollow = shouldFollowMessages();
+    message.loading = false;
+    message.content = content;
+    const node = els.messageList.querySelector(`[data-message-id="${cssEscape(message.id)}"] .message-body`);
+    if (!node) {
+      renderMessages({ forceScroll: shouldFollow });
+      return;
+    }
+    const attachments = renderMessageAttachments(message.attachments);
+    node.innerHTML = `
+      <div class="message-meta">助手</div>
+      <div class="message-content">${renderRichText(message.content)}</div>
+      ${attachments}
+    `;
+    if (shouldFollow) {
+      scrollMessagesToBottom();
+    }
+  }
+
+  function createStreamUpdater(message) {
+    let latest = "";
+    return (content, options = {}) => {
+      latest = content;
+      if (options.flush) {
+        if (streamFrame) {
+          cancelAnimationFrame(streamFrame);
+          streamFrame = 0;
+        }
+        updateMessageContent(message, latest);
+        return;
+      }
+      if (streamFrame) return;
+      streamFrame = requestAnimationFrame(() => {
+        streamFrame = 0;
+        updateMessageContent(message, latest);
+      });
+    };
+  }
+
+  function shouldFollowMessages() {
+    if (!isSending) return true;
+    return els.messageList.dataset.userDetached !== "true" && isMessageListNearBottom();
+  }
+
+  function isMessageListNearBottom() {
+    const distance = els.messageList.scrollHeight - els.messageList.scrollTop - els.messageList.clientHeight;
+    return distance < 90;
+  }
+
+  function scrollMessagesToBottom() {
     els.messageList.scrollTop = els.messageList.scrollHeight;
+    els.messageList.dataset.userDetached = "false";
   }
 
   function renderMessageAttachments(attachments) {
@@ -370,6 +447,71 @@
           .join("")}
       </div>
     `;
+  }
+
+  function ensureMessageId(message) {
+    if (!message.id) {
+      message.id = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+    return message.id;
+  }
+
+  function renderRichText(value) {
+    const lines = String(value || "").replace(/\r\n/g, "\n").split("\n");
+    const html = [];
+    let listOpen = false;
+
+    const closeList = () => {
+      if (!listOpen) return;
+      html.push("</ul>");
+      listOpen = false;
+    };
+
+    for (const rawLine of lines) {
+      const line = rawLine.trimEnd();
+      const clean = line.trim();
+      if (!clean) {
+        closeList();
+        html.push("<br>");
+        continue;
+      }
+      if (/^-{3,}$/.test(clean)) {
+        closeList();
+        html.push('<div class="md-divider"></div>');
+        continue;
+      }
+      const heading = clean.match(/^#{1,6}\s+(.+)$/);
+      if (heading) {
+        closeList();
+        html.push(`<div class="md-heading">${formatInline(heading[1])}</div>`);
+        continue;
+      }
+      const bullet = clean.match(/^[-*]\s+(.+)$/);
+      if (bullet) {
+        if (!listOpen) {
+          html.push('<ul class="md-list">');
+          listOpen = true;
+        }
+        html.push(`<li>${formatInline(bullet[1])}</li>`);
+        continue;
+      }
+      const numbered = clean.match(/^(\d+)\.\s+(.+)$/);
+      if (numbered) {
+        closeList();
+        html.push(`<div class="md-numbered"><span>${escapeHtml(numbered[1])}.</span><p>${formatInline(numbered[2])}</p></div>`);
+        continue;
+      }
+      closeList();
+      html.push(`<p>${formatInline(line)}</p>`);
+    }
+    closeList();
+    return html.join("");
+  }
+
+  function formatInline(value) {
+    return escapeHtml(String(value || ""))
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
   }
 
   function renderAttachmentTray() {
@@ -490,6 +632,28 @@
     state.ui.sessionsOpen = false;
     persist();
     applyLayoutState();
+  }
+
+  function toggleInputExpanded() {
+    inputExpanded = !inputExpanded;
+    els.chatPanel.classList.toggle("input-expanded", inputExpanded);
+    els.expandInputBtn.classList.toggle("active", inputExpanded);
+    els.expandInputBtn.setAttribute("aria-label", inputExpanded ? "收起输入框" : "扩大输入框");
+    els.expandInputBtn.dataset.tooltip = inputExpanded ? "收起输入框" : "扩大输入框";
+    syncComposerHeight();
+    els.messageInput.focus();
+  }
+
+  function syncComposerHeight() {
+    if (!els.messageInput) return;
+    const textarea = els.messageInput;
+    const lineHeight = Number.parseFloat(getComputedStyle(textarea).lineHeight) || 22;
+    const maxRows = inputExpanded ? 9 : 3;
+    const verticalPadding = inputExpanded ? 18 : 8;
+    const maxHeight = Math.round(lineHeight * maxRows + verticalPadding);
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }
 
   function hydrateCapabilitySettings() {
@@ -734,6 +898,7 @@
       session.title = userContent.slice(0, 24);
     }
     els.messageInput.value = "";
+    syncComposerHeight();
     pendingAttachments = [];
     persist();
     const assistantMessage = {
@@ -742,30 +907,31 @@
       loading: true,
       status: "正在思考"
     };
+    ensureMessageId(userMessage);
+    ensureMessageId(assistantMessage);
     session.messages.push(assistantMessage);
+    els.messageList.dataset.userDetached = "false";
     renderAll();
+    scrollMessagesToBottom();
 
     try {
       const skill = getActiveSkill();
-      const onUpdate = (content) => {
-        assistantMessage.loading = false;
-        assistantMessage.content = content;
-        renderMessages();
-      };
+      const onUpdate = createStreamUpdater(assistantMessage);
       const reply = state.settings.streamOutput
         ? await generateReplyStream(session, skill, userMessage, onUpdate)
         : await generateReply(session, skill, userMessage);
-      assistantMessage.loading = false;
-      assistantMessage.content = reply || assistantMessage.content || "没有收到模型输出。";
+      onUpdate(reply || assistantMessage.content || "没有收到模型输出。", { flush: true });
     } catch (error) {
-      assistantMessage.loading = false;
-      assistantMessage.content = `请求失败：${error.message}`;
+      updateMessageContent(assistantMessage, `请求失败：${error.message}`);
     } finally {
       session.updatedAt = new Date().toISOString();
       persist();
       isSending = false;
       els.sendBtn.disabled = false;
-      renderAll();
+      renderSessions();
+      renderInspector();
+      renderWorkspaceStats();
+      updateStatus();
     }
   }
 
@@ -902,9 +1068,9 @@
     const source = String(text || "");
     let cursor = 0;
     while (cursor < source.length) {
-      cursor += source[cursor] === "\n" ? 1 : 4;
+      cursor += source[cursor] === "\n" ? 1 : 10;
       onUpdate(source.slice(0, cursor));
-      await delay(18);
+      await delay(28);
     }
     return source;
   }
@@ -1565,10 +1731,12 @@
   }
 
   function normalizeUiState(ui) {
+    const migrated = ui?.layoutVersion === 2;
     return {
       leftCollapsed: Boolean(ui?.leftCollapsed),
-      rightCollapsed: ui?.rightCollapsed === undefined ? true : Boolean(ui.rightCollapsed),
-      sessionsOpen: Boolean(ui?.sessionsOpen)
+      rightCollapsed: migrated ? (ui?.rightCollapsed === undefined ? true : Boolean(ui.rightCollapsed)) : true,
+      sessionsOpen: Boolean(ui?.sessionsOpen),
+      layoutVersion: 2
     };
   }
 
@@ -1683,6 +1851,11 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
+  }
+
+  function cssEscape(value) {
+    if (window.CSS?.escape) return window.CSS.escape(String(value));
+    return String(value).replace(/["\\\]]/g, "\\$&");
   }
 
   function clone(value) {
