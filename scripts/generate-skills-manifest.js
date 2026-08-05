@@ -265,6 +265,7 @@ const manifest = `window.SKILL_LIBRARY = ${JSON.stringify(skills, null, 2)};\n\n
   models: ["gpt-5.5", "gpt-5.5-mini", "gpt-5.5-vision", "gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"],
   endpoint: "https://api.openai.com/v1/chat/completions",
   apiKey: "",
+  streamOutput: false,
   capabilities: {
     vision: true,
     fileText: true,

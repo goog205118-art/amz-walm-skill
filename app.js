@@ -45,13 +45,14 @@
   const els = {};
   const state = loadWorkspace();
   let pendingAttachments = [];
+  let isSending = false;
 
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
     state.openGroups = state.openGroups && typeof state.openGroups === "object" ? state.openGroups : {};
     state.ui = normalizeUiState(state.ui);
-    state.settings.capabilities = normalizeCapabilities(state.settings.capabilities);
+    state.settings = normalizeSettings(state.settings);
     bindElements();
     bindEvents();
     hydrateSettings();
@@ -74,6 +75,8 @@
       "skillModal",
       "closeSkillModalBtn",
       "saveSettingsBtn",
+      "exportSettingsBtn",
+      "settingsImportInput",
       "newSessionBtn",
       "exportBtn",
       "importInput",
@@ -110,7 +113,8 @@
       "preserveAttachmentsToggle",
       "longContextToggle",
       "reasoningToggle",
-      "autoContextToggle"
+      "autoContextToggle",
+      "streamOutputToggle"
     ].forEach((id) => {
       els[id] = document.getElementById(id);
     });
@@ -128,6 +132,8 @@
       button.addEventListener("click", closeSkillPicker);
     });
     els.saveSettingsBtn.addEventListener("click", saveSettingsFromForm);
+    els.exportSettingsBtn.addEventListener("click", exportSettings);
+    els.settingsImportInput.addEventListener("change", importSettings);
     els.newSessionBtn.addEventListener("click", createNewSession);
     els.exportBtn.addEventListener("click", exportWorkspace);
     els.importInput.addEventListener("change", importWorkspace);
@@ -191,6 +197,7 @@
     els.apiKeyInput.value = state.settings.apiKey;
     els.endpointInput.value = state.settings.endpoint;
     els.searchInput.value = state.searchText;
+    els.streamOutputToggle.checked = Boolean(state.settings.streamOutput);
     hydrateCapabilitySettings();
     applyLayoutState();
   }
@@ -332,12 +339,15 @@
         const meta = message.role === "assistant" ? "助手" : message.role === "user" ? "用户" : "系统";
         const avatar = message.role === "assistant" ? "AI" : message.role === "user" ? "你" : "";
         const attachments = renderMessageAttachments(message.attachments);
+        const content = message.loading
+          ? `<div class="thinking"><span></span><span></span><span></span><em>${escapeHtml(message.status || "正在思考")}</em></div>`
+          : `<div class="message-content">${escapeHtml(message.content)}</div>`;
         return `
           <div class="message ${cls}">
             <div class="message-avatar">${avatar}</div>
             <div class="message-body">
               <div class="message-meta">${meta}</div>
-              <div class="message-content">${escapeHtml(message.content)}</div>
+              ${content}
               ${attachments}
             </div>
           </div>
@@ -586,10 +596,63 @@
     state.settings.apiKey = els.apiKeyInput.value.trim();
     state.settings.endpoint = els.endpointInput.value.trim() || getProtocolConfig(protocol).endpoint;
     state.settings.capabilities = readCapabilitySettingsFromForm();
+    state.settings.streamOutput = els.streamOutputToggle.checked;
     persist();
     hydrateSettings();
     updateStatus();
     closeSettings();
+  }
+
+  function exportSettings() {
+    const protocol = normalizeProtocol(els.protocolInput.value);
+    const models = normalizeModelList(parseModelList(els.modelListInput.value), els.modelInput.value, protocol);
+    const settings = {
+      ...state.settings,
+      protocol,
+      models,
+      model: els.modelInput.value.trim() || models[0] || getProtocolConfig(protocol).model,
+      apiKey: els.apiKeyInput.value.trim(),
+      endpoint: els.endpointInput.value.trim() || getProtocolConfig(protocol).endpoint,
+      capabilities: readCapabilitySettingsFromForm(),
+      streamOutput: els.streamOutputToggle.checked
+    };
+    const payload = {
+      type: "amz-walm-skill-settings",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      settings
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "amz-walm-skill-settings.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importSettings(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const imported = JSON.parse(String(reader.result || "{}"));
+        const nextSettings = imported.settings && typeof imported.settings === "object" ? imported.settings : imported;
+        state.settings = normalizeSettings({
+          ...state.settings,
+          ...nextSettings
+        });
+        persist();
+        hydrateSettings();
+        updateStatus();
+      } catch (error) {
+        window.alert(`配置导入失败：${error.message}`);
+      } finally {
+        event.target.value = "";
+      }
+    };
+    reader.readAsText(file);
   }
 
   function createNewSession() {
@@ -641,9 +704,12 @@
   }
 
   async function sendMessage() {
+    if (isSending) return;
     const input = els.messageInput.value.trim();
     const attachments = pendingAttachments.map((attachment) => ({ ...attachment }));
     if (!input && !attachments.length) return;
+    isSending = true;
+    els.sendBtn.disabled = true;
     const userContent = input || "请分析我上传的附件，并给出可执行建议。";
 
     const routed = routeSkill(userContent);
@@ -654,10 +720,15 @@
     state.lastRouteReason = buildRouteReason(userContent, routedSkill, routed.matches);
 
     const session = getActiveSession();
-    if (!session) return;
+    if (!session) {
+      isSending = false;
+      els.sendBtn.disabled = false;
+      return;
+    }
 
     session.skillId = state.activeSkillId;
-    session.messages.push({ role: "user", content: userContent, attachments });
+    const userMessage = { role: "user", content: userContent, attachments };
+    session.messages.push(userMessage);
     session.updatedAt = new Date().toISOString();
     if (!session.title || session.title === "新会话") {
       session.title = userContent.slice(0, 24);
@@ -665,14 +736,37 @@
     els.messageInput.value = "";
     pendingAttachments = [];
     persist();
+    const assistantMessage = {
+      role: "assistant",
+      content: "",
+      loading: true,
+      status: "正在思考"
+    };
+    session.messages.push(assistantMessage);
     renderAll();
 
-    const skill = getActiveSkill();
-    const reply = await generateReply(session, skill, session.messages.at(-1));
-    session.messages.push({ role: "assistant", content: reply });
-    session.updatedAt = new Date().toISOString();
-    persist();
-    renderAll();
+    try {
+      const skill = getActiveSkill();
+      const onUpdate = (content) => {
+        assistantMessage.loading = false;
+        assistantMessage.content = content;
+        renderMessages();
+      };
+      const reply = state.settings.streamOutput
+        ? await generateReplyStream(session, skill, userMessage, onUpdate)
+        : await generateReply(session, skill, userMessage);
+      assistantMessage.loading = false;
+      assistantMessage.content = reply || assistantMessage.content || "没有收到模型输出。";
+    } catch (error) {
+      assistantMessage.loading = false;
+      assistantMessage.content = `请求失败：${error.message}`;
+    } finally {
+      session.updatedAt = new Date().toISOString();
+      persist();
+      isSending = false;
+      els.sendBtn.disabled = false;
+      renderAll();
+    }
   }
 
   async function generateReply(session, skill, userMessage) {
@@ -696,14 +790,140 @@
     }
   }
 
+  async function generateReplyStream(session, skill, userMessage, onUpdate) {
+    const messages = buildPromptMessages(session, skill, userMessage);
+    if (!state.settings.apiKey) {
+      return streamLocalText(buildDemoReply(skill, userMessage), onUpdate);
+    }
+
+    try {
+      const request = buildModelRequest(messages, { stream: true });
+      const response = await fetch(request.url, request);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.body || contentType.includes("application/json")) {
+        const data = await response.json();
+        const text = extractModelText(data, state.settings.protocol) || buildDemoReply(skill, userMessage);
+        onUpdate(text);
+        return text;
+      }
+
+      const streamed = await readStreamingResponse(response, state.settings.protocol, onUpdate);
+      return streamed || buildDemoReply(skill, userMessage);
+    } catch (error) {
+      const fallback = `${buildDemoReply(skill, userMessage)}\n\n[API 回退] ${error.message}`;
+      await streamLocalText(fallback, onUpdate);
+      return fallback;
+    }
+  }
+
+  async function readStreamingResponse(response, protocol, onUpdate) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
+    let finished = false;
+
+    const append = (delta) => {
+      if (!delta) return;
+      fullText += delta;
+      onUpdate(fullText);
+    };
+
+    while (!finished) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        const result = readStreamLine(line, protocol);
+        if (result.done) {
+          finished = true;
+          break;
+        }
+        append(result.delta);
+      }
+    }
+
+    if (buffer.trim() && !finished) {
+      const result = readStreamLine(buffer, protocol);
+      append(result.delta);
+    }
+    return fullText.trim();
+  }
+
+  function readStreamLine(line, protocol) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed || trimmed.startsWith(":") || trimmed.startsWith("event:")) {
+      return { delta: "", done: false };
+    }
+    const payload = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
+    if (!payload || payload === "[DONE]") {
+      return { delta: "", done: payload === "[DONE]" };
+    }
+    if (!payload.startsWith("{") && !payload.startsWith("[")) {
+      return { delta: payload, done: false };
+    }
+    try {
+      return { delta: extractStreamDelta(JSON.parse(payload), protocol), done: false };
+    } catch {
+      return { delta: "", done: false };
+    }
+  }
+
+  function extractStreamDelta(data, protocol) {
+    if (protocol === "anthropic") {
+      if (data?.type === "content_block_delta" && typeof data?.delta?.text === "string") return data.delta.text;
+      if (typeof data?.completion === "string") return data.completion;
+    }
+    if (Array.isArray(data?.choices)) {
+      const choice = data.choices[0] || {};
+      if (typeof choice?.delta?.content === "string") return choice.delta.content;
+      if (Array.isArray(choice?.delta?.content)) {
+        return choice.delta.content.map((part) => part?.text || "").filter(Boolean).join("");
+      }
+      if (typeof choice?.text === "string") return choice.text;
+    }
+    if (protocol === "gemini") {
+      return extractModelText(data, "gemini");
+    }
+    if (typeof data?.delta === "string") return data.delta;
+    if (typeof data?.output_text_delta === "string") return data.output_text_delta;
+    if (data?.type === "response.output_text.delta" && typeof data?.delta === "string") return data.delta;
+    return "";
+  }
+
+  async function streamLocalText(text, onUpdate) {
+    const source = String(text || "");
+    let cursor = 0;
+    while (cursor < source.length) {
+      cursor += source[cursor] === "\n" ? 1 : 4;
+      onUpdate(source.slice(0, cursor));
+      await delay(18);
+    }
+    return source;
+  }
+
+  function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   function buildPromptMessages(session, skill) {
     const capabilities = getCapabilitySettings();
     const contextDepth = capabilities.longContext ? 16 : 8;
-    const recent = session.messages.slice(-contextDepth).map((message) => ({
-      role: message.role,
-      content: message.content,
-      attachments: message.attachments || []
-    }));
+    const recent = session.messages
+      .filter((message) => !message.loading)
+      .slice(-contextDepth)
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+        attachments: message.attachments || []
+      }));
     const system = {
       role: "system",
       content: [
@@ -1028,14 +1248,10 @@
 
   function mergeImportedState(imported) {
     if (imported.settings) {
-      state.settings = {
-        ...window.DEFAULT_SETTINGS,
+      state.settings = normalizeSettings({
         ...state.settings,
         ...imported.settings
-      };
-      state.settings.protocol = normalizeProtocol(state.settings.protocol);
-      state.settings.models = normalizeModelList(state.settings.models, state.settings.model, state.settings.protocol);
-      state.settings.capabilities = normalizeCapabilities(state.settings.capabilities);
+      });
     }
     if (imported.ui) {
       state.ui = normalizeUiState(imported.ui);
@@ -1070,9 +1286,7 @@
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       const initial = clone(window.DEFAULT_WORKSPACE);
-      initial.settings.protocol = normalizeProtocol(initial.settings.protocol);
-      initial.settings.models = normalizeModelList(initial.settings.models, initial.settings.model, initial.settings.protocol);
-      initial.settings.capabilities = normalizeCapabilities(initial.settings.capabilities);
+      initial.settings = normalizeSettings(initial.settings);
       initial.ui = normalizeUiState(initial.ui);
       return initial;
     }
@@ -1091,15 +1305,11 @@
         openGroups: parsed.openGroups && typeof parsed.openGroups === "object" ? parsed.openGroups : {},
         sessions: Array.isArray(parsed.sessions) && parsed.sessions.length ? parsed.sessions : clone(window.DEFAULT_WORKSPACE.sessions)
       };
-      workspace.settings.protocol = normalizeProtocol(workspace.settings.protocol);
-      workspace.settings.models = normalizeModelList(workspace.settings.models, workspace.settings.model, workspace.settings.protocol);
-      workspace.settings.capabilities = normalizeCapabilities(workspace.settings.capabilities);
+      workspace.settings = normalizeSettings(workspace.settings);
       return workspace;
     } catch {
       const fallback = clone(window.DEFAULT_WORKSPACE);
-      fallback.settings.protocol = normalizeProtocol(fallback.settings.protocol);
-      fallback.settings.models = normalizeModelList(fallback.settings.models, fallback.settings.model, fallback.settings.protocol);
-      fallback.settings.capabilities = normalizeCapabilities(fallback.settings.capabilities);
+      fallback.settings = normalizeSettings(fallback.settings);
       fallback.ui = normalizeUiState(fallback.ui);
       return fallback;
     }
@@ -1109,10 +1319,11 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
-  function buildModelRequest(messages) {
+  function buildModelRequest(messages, options = {}) {
     const protocol = normalizeProtocol(state.settings.protocol);
     const model = state.settings.model;
-    const endpoint = state.settings.endpoint || getProtocolConfig(protocol).endpoint;
+    const stream = Boolean(options.stream);
+    const endpoint = stream ? getStreamingEndpoint(state.settings.endpoint || getProtocolConfig(protocol).endpoint, protocol) : state.settings.endpoint || getProtocolConfig(protocol).endpoint;
     const apiKey = state.settings.apiKey;
 
     if (protocol === "gemini") {
@@ -1155,6 +1366,7 @@
           model,
           max_tokens: 1800,
           temperature: 0.3,
+          stream,
           system,
           messages: conversation
         })
@@ -1174,6 +1386,7 @@
           role: message.role,
           content: buildOpenAiContent(message, getCapabilitySettings())
         })),
+        stream,
         temperature: getCapabilitySettings().reasoning ? 0.2 : 0.3
       })
     };
@@ -1372,11 +1585,38 @@
     };
   }
 
+  function normalizeSettings(settings) {
+    const source = {
+      ...window.DEFAULT_SETTINGS,
+      ...(settings && typeof settings === "object" ? settings : {})
+    };
+    source.protocol = normalizeProtocol(source.protocol);
+    source.models = normalizeModelList(source.models, source.model, source.protocol);
+    source.model = source.models.includes(source.model) ? source.model : source.models[0] || getProtocolConfig(source.protocol).model;
+    source.endpoint = source.endpoint || getProtocolConfig(source.protocol).endpoint;
+    source.apiKey = source.apiKey || "";
+    source.capabilities = normalizeCapabilities(source.capabilities);
+    source.streamOutput = Boolean(source.streamOutput);
+    return source;
+  }
+
   function buildEndpointUrl(endpoint, values) {
     let url = String(endpoint || "").trim();
     Object.entries(values).forEach(([key, value]) => {
       url = url.replaceAll(`{${key}}`, encodeURIComponent(value || ""));
     });
+    return url;
+  }
+
+  function getStreamingEndpoint(endpoint, protocol) {
+    let url = String(endpoint || "").trim();
+    if (normalizeProtocol(protocol) !== "gemini") return url;
+    if (url.includes(":generateContent")) {
+      url = url.replace(":generateContent", ":streamGenerateContent");
+    }
+    if (!/[?&]alt=/.test(url)) {
+      url += `${url.includes("?") ? "&" : "?"}alt=sse`;
+    }
     return url;
   }
 

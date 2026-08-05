@@ -10289,6 +10289,7 @@ window.DEFAULT_SETTINGS = {
   ],
   "endpoint": "https://api.openai.com/v1/chat/completions",
   "apiKey": "",
+  "streamOutput": false,
   "capabilities": {
     "vision": true,
     "fileText": true,
