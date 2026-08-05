@@ -70,6 +70,9 @@
       "settingsBtn",
       "settingsModal",
       "closeSettingsBtn",
+      "skillPickerBtn",
+      "skillModal",
+      "closeSkillModalBtn",
       "saveSettingsBtn",
       "newSessionBtn",
       "exportBtn",
@@ -93,6 +96,9 @@
       "chatPanel",
       "leftPanelToggle",
       "rightPanelToggle",
+      "sessionsPanelToggle",
+      "closeSessionsBtn",
+      "sessionFlyout",
       "skillBrief",
       "capabilityList",
       "workflowList",
@@ -116,6 +122,11 @@
     els.settingsModal.querySelectorAll("[data-close-settings]").forEach((button) => {
       button.addEventListener("click", closeSettings);
     });
+    els.skillPickerBtn.addEventListener("click", openSkillPicker);
+    els.closeSkillModalBtn.addEventListener("click", closeSkillPicker);
+    els.skillModal.querySelectorAll("[data-close-skills]").forEach((button) => {
+      button.addEventListener("click", closeSkillPicker);
+    });
     els.saveSettingsBtn.addEventListener("click", saveSettingsFromForm);
     els.newSessionBtn.addEventListener("click", createNewSession);
     els.exportBtn.addEventListener("click", exportWorkspace);
@@ -134,6 +145,8 @@
     bindDropZone(els.chatPanel);
     bindDropZone(els.messageInput);
     els.leftPanelToggle.addEventListener("click", () => togglePanel("left"));
+    els.sessionsPanelToggle.addEventListener("click", toggleSessionsPanel);
+    els.closeSessionsBtn.addEventListener("click", closeSessionsPanel);
     els.rightPanelToggle.addEventListener("click", () => togglePanel("right"));
     els.sendBtn.addEventListener("click", sendMessage);
     els.composerModelSelect.addEventListener("change", () => {
@@ -152,9 +165,16 @@
       renderModelOptions(els.modelInput.value, parseModelList(els.modelListInput.value));
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && !els.settingsModal.classList.contains("hidden")) {
+      if (event.key !== "Escape") return;
+      if (!els.settingsModal.classList.contains("hidden")) {
         closeSettings();
+        return;
       }
+      if (!els.skillModal.classList.contains("hidden")) {
+        closeSkillPicker();
+        return;
+      }
+      closeSessionsPanel();
     });
   }
 
@@ -263,6 +283,7 @@
     els.skillList.querySelectorAll("button").forEach((button) => {
       button.addEventListener("click", () => {
         setActiveSkill(button.dataset.skill);
+        closeSkillPicker();
       });
     });
     els.skillList.querySelectorAll(".skill-group").forEach((group) => {
@@ -293,6 +314,7 @@
     els.sessionList.querySelectorAll("button").forEach((button) => {
       button.addEventListener("click", () => {
         setActiveSession(button.dataset.session);
+        closeSessionsPanel();
       });
     });
   }
@@ -413,10 +435,14 @@
     state.ui = normalizeUiState(state.ui);
     els.workspace.classList.toggle("left-collapsed", state.ui.leftCollapsed);
     els.workspace.classList.toggle("right-collapsed", state.ui.rightCollapsed);
+    els.workspace.classList.toggle("sessions-open", state.ui.sessionsOpen);
     els.leftPanelToggle.textContent = state.ui.leftCollapsed ? "›" : "‹";
-    els.rightPanelToggle.textContent = state.ui.rightCollapsed ? "‹" : "›";
+    els.rightPanelToggle.classList.toggle("active", !state.ui.rightCollapsed);
+    els.sessionsPanelToggle.classList.toggle("active", state.ui.sessionsOpen);
     els.leftPanelToggle.setAttribute("aria-label", state.ui.leftCollapsed ? "展开技能栏" : "收起技能栏");
     els.rightPanelToggle.setAttribute("aria-label", state.ui.rightCollapsed ? "展开说明栏" : "收起说明栏");
+    els.sessionsPanelToggle.setAttribute("aria-expanded", String(state.ui.sessionsOpen));
+    els.sessionFlyout.setAttribute("aria-hidden", String(!state.ui.sessionsOpen));
   }
 
   function togglePanel(side) {
@@ -427,6 +453,31 @@
     if (side === "right") {
       state.ui.rightCollapsed = !state.ui.rightCollapsed;
     }
+    persist();
+    applyLayoutState();
+  }
+
+  function openSkillPicker() {
+    renderAll();
+    els.skillModal.classList.remove("hidden");
+    els.searchInput.focus();
+  }
+
+  function closeSkillPicker() {
+    els.skillModal.classList.add("hidden");
+  }
+
+  function toggleSessionsPanel() {
+    state.ui = normalizeUiState(state.ui);
+    state.ui.sessionsOpen = !state.ui.sessionsOpen;
+    persist();
+    applyLayoutState();
+  }
+
+  function closeSessionsPanel() {
+    state.ui = normalizeUiState(state.ui);
+    if (!state.ui.sessionsOpen) return;
+    state.ui.sessionsOpen = false;
     persist();
     applyLayoutState();
   }
@@ -1303,7 +1354,8 @@
   function normalizeUiState(ui) {
     return {
       leftCollapsed: Boolean(ui?.leftCollapsed),
-      rightCollapsed: Boolean(ui?.rightCollapsed)
+      rightCollapsed: ui?.rightCollapsed === undefined ? true : Boolean(ui.rightCollapsed),
+      sessionsOpen: Boolean(ui?.sessionsOpen)
     };
   }
 

@@ -10,81 +10,30 @@
   </head>
   <body>
     <div class="app-shell">
-      <header class="topbar">
-        <div class="brand">
-          <div class="brand-mark">AI</div>
-          <div>
-            <div class="brand-title">电商 Skill 工作台</div>
-            <div class="brand-subtitle">内部电商 AI 能力封装工具</div>
-          </div>
-        </div>
-        <div class="toolbar">
-          <button id="settingsBtn" class="tool-btn primary" type="button" aria-label="设置" data-tooltip="设置">
-            <span class="tool-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.1 2.1 0 0 1-2.97 2.97l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V21.3a2.1 2.1 0 0 1-4.2 0v-.06a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.04.04a2.1 2.1 0 0 1-2.97-2.97l.04-.04A1.8 1.8 0 0 0 3.8 15a1.8 1.8 0 0 0-1.66-1.1H2.1a2.1 2.1 0 0 1 0-4.2h.06A1.8 1.8 0 0 0 3.82 8a1.8 1.8 0 0 0-.36-1.98l-.04-.04A2.1 2.1 0 0 1 6.39 3l.04.04a1.8 1.8 0 0 0 1.98.36A1.8 1.8 0 0 0 9.5 1.75V1.7a2.1 2.1 0 0 1 4.2 0v.06a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.1 2.1 0 0 1 2.97 2.97l-.04.04A1.8 1.8 0 0 0 19.4 8c.18.64.7 1.1 1.36 1.1h.14a2.1 2.1 0 0 1 0 4.2h-.14A1.8 1.8 0 0 0 19.4 15Z"/></svg>
-            </span>
-          </button>
-          <button id="newSessionBtn" class="tool-btn" type="button" aria-label="新建会话" data-tooltip="新建会话">
-            <span class="tool-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-            </span>
-          </button>
-          <button id="exportBtn" class="tool-btn" type="button" aria-label="导出工作区" data-tooltip="导出工作区">
-            <span class="tool-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M5 18.5h14"/></svg>
-            </span>
-          </button>
-          <label class="tool-btn file-btn" tabindex="0" aria-label="导入工作区" data-tooltip="导入工作区">
-            <span class="tool-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 21V10"/><path d="m7.5 14.5 4.5-4.5 4.5 4.5"/><path d="M5 5.5h14"/></svg>
-            </span>
-            <input id="importInput" type="file" accept="application/json" />
-          </label>
-          <label class="tool-btn file-btn" tabindex="0" aria-label="导入 Skill" data-tooltip="导入 Skill">
-            <span class="tool-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M5 20h14"/><path d="M6.5 4.5h4"/></svg>
-            </span>
-            <input id="skillImportInput" type="file" accept=".md,.txt,text/markdown,text/plain" multiple />
-          </label>
-        </div>
-      </header>
-
       <main id="workspace" class="workspace">
-        <aside class="panel sidebar">
-          <div class="panel-toggle-row">
-            <button id="leftPanelToggle" class="rail-toggle" type="button" aria-label="收起技能栏">‹</button>
-            <span>技能</span>
+        <aside class="panel sidebar nav-rail">
+          <div class="rail-brand" aria-label="电商 Skill 工作台">
+            <div class="brand-mark">AI</div>
           </div>
-          <div class="side-content">
-            <section class="section filter-section">
-              <div class="section-head">
-                <h2>技能导航</h2>
-                <span id="skillCount" class="count"></span>
-              </div>
-              <label class="field search">
-                <span>搜索</span>
-                <input id="searchInput" type="search" placeholder="搜索技能 / 平台 / 关键词" />
-              </label>
-              <details class="filter-drawer">
-                <summary>筛选</summary>
-                <div id="categoryTabs" class="tabs"></div>
-                <div id="platformTabs" class="tabs subtle"></div>
-              </details>
-            </section>
-
-            <section class="section grow library-section">
-              <div class="section-head">
-                <h2>全部 Skills</h2>
-              </div>
-              <div id="skillList" class="list"></div>
-            </section>
-
-            <details class="section session-drawer" open>
-              <summary class="section-head">
-                <h2>会话</h2>
-              </summary>
-              <div id="sessionList" class="list compact"></div>
-            </details>
+          <button id="skillPickerBtn" class="rail-action active" type="button" aria-label="选择 Skill" data-tooltip="选择 Skill">
+            <span class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><path d="M18 16v4"/><path d="M16 18h4"/></svg>
+            </span>
+          </button>
+          <button id="sessionsPanelToggle" class="rail-action" type="button" aria-label="会话" data-tooltip="会话">
+            <span class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M5 6.5h14"/><path d="M5 12h10"/><path d="M5 17.5h8"/><path d="M19 15v5"/><path d="M16.5 17.5h5"/></svg>
+            </span>
+          </button>
+          <button id="leftPanelToggle" class="rail-action ghost-control" type="button" aria-label="左侧功能轨"></button>
+          <div class="rail-spacer"></div>
+          <div class="rail-initial">K</div>
+          <div id="sessionFlyout" class="session-flyout">
+            <div class="flyout-head">
+              <h2>会话</h2>
+              <button id="closeSessionsBtn" class="icon-btn small" type="button" aria-label="关闭会话">×</button>
+            </div>
+            <div id="sessionList" class="list compact"></div>
           </div>
         </aside>
 
@@ -114,10 +63,41 @@
           </div>
         </section>
 
-        <aside class="panel inspector">
-          <div class="panel-toggle-row">
-            <button id="rightPanelToggle" class="rail-toggle" type="button" aria-label="收起说明栏">›</button>
-            <span>说明</span>
+        <aside class="panel inspector right-dock">
+          <div class="dock-tools" aria-label="工作区工具">
+            <button id="settingsBtn" class="tool-btn primary" type="button" aria-label="设置" data-tooltip="设置">
+              <span class="tool-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.1 2.1 0 0 1-2.97 2.97l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V21.3a2.1 2.1 0 0 1-4.2 0v-.06a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.04.04a2.1 2.1 0 0 1-2.97-2.97l.04-.04A1.8 1.8 0 0 0 3.8 15a1.8 1.8 0 0 0-1.66-1.1H2.1a2.1 2.1 0 0 1 0-4.2h.06A1.8 1.8 0 0 0 3.82 8a1.8 1.8 0 0 0-.36-1.98l-.04-.04A2.1 2.1 0 0 1 6.39 3l.04.04a1.8 1.8 0 0 0 1.98.36A1.8 1.8 0 0 0 9.5 1.75V1.7a2.1 2.1 0 0 1 4.2 0v.06a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.1 2.1 0 0 1 2.97 2.97l-.04.04A1.8 1.8 0 0 0 19.4 8c.18.64.7 1.1 1.36 1.1h.14a2.1 2.1 0 0 1 0 4.2h-.14A1.8 1.8 0 0 0 19.4 15Z"/></svg>
+              </span>
+            </button>
+            <button id="newSessionBtn" class="tool-btn" type="button" aria-label="新建会话" data-tooltip="新建会话">
+              <span class="tool-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              </span>
+            </button>
+            <button id="exportBtn" class="tool-btn" type="button" aria-label="导出工作区" data-tooltip="导出工作区">
+              <span class="tool-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M5 18.5h14"/></svg>
+              </span>
+            </button>
+            <label class="tool-btn file-btn" tabindex="0" aria-label="导入工作区" data-tooltip="导入工作区">
+              <span class="tool-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 21V10"/><path d="m7.5 14.5 4.5-4.5 4.5 4.5"/><path d="M5 5.5h14"/></svg>
+              </span>
+              <input id="importInput" type="file" accept="application/json" />
+            </label>
+            <label class="tool-btn file-btn" tabindex="0" aria-label="导入 Skill" data-tooltip="导入 Skill">
+              <span class="tool-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M5 20h14"/><path d="M6.5 4.5h4"/></svg>
+              </span>
+              <input id="skillImportInput" type="file" accept=".md,.txt,text/markdown,text/plain" multiple />
+            </label>
+            <div class="dock-separator"></div>
+            <button id="rightPanelToggle" class="tool-btn" type="button" aria-label="技能说明" data-tooltip="技能说明">
+              <span class="tool-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 17v-5"/><path d="M12 8h.01"/><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/></svg>
+              </span>
+            </button>
           </div>
           <div class="side-content">
             <details class="section collapsible" open>
@@ -157,6 +137,37 @@
           </div>
         </aside>
       </main>
+
+      <div id="skillModal" class="modal hidden skill-modal" role="dialog" aria-modal="true" aria-labelledby="skillPickerTitle">
+        <button class="modal-backdrop" type="button" data-close-skills aria-label="关闭技能选择"></button>
+        <section class="settings-card skill-picker-card" role="document">
+          <div class="modal-head">
+            <div>
+              <h2 id="skillPickerTitle">选择 Skill</h2>
+              <p>按平台、分类或关键词快速切换当前工作能力。</p>
+            </div>
+            <button id="closeSkillModalBtn" class="icon-btn" type="button" aria-label="关闭技能选择">×</button>
+          </div>
+          <section class="section filter-section">
+            <div class="section-head">
+              <h2>技能库</h2>
+              <span id="skillCount" class="count"></span>
+            </div>
+            <label class="field search">
+              <span>搜索</span>
+              <input id="searchInput" type="search" placeholder="搜索技能 / 平台 / 关键词" />
+            </label>
+            <details class="filter-drawer" open>
+              <summary>筛选</summary>
+              <div id="categoryTabs" class="tabs"></div>
+              <div id="platformTabs" class="tabs subtle"></div>
+            </details>
+          </section>
+          <section class="section grow library-section">
+            <div id="skillList" class="list skill-picker-list"></div>
+          </section>
+        </section>
+      </div>
 
       <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
         <button class="modal-backdrop" type="button" data-close-settings aria-label="关闭设置"></button>
