@@ -102,7 +102,7 @@ button {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -168,6 +168,92 @@ button {
 
 .btn.ghost {
   background: transparent;
+}
+
+.tool-btn {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel-alt);
+  color: var(--text);
+}
+
+.tool-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.tool-btn:hover {
+  border-color: rgba(31, 122, 91, 0.35);
+  background: white;
+  color: var(--accent);
+}
+
+.tool-btn.primary:hover {
+  background: #166247;
+  color: white;
+}
+
+.tool-btn.file-btn {
+  min-height: 42px;
+  overflow: visible;
+}
+
+.tool-btn.file-btn input {
+  z-index: 2;
+}
+
+.tool-icon {
+  position: relative;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.tool-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tool-btn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-3px);
+  z-index: 30;
+  min-width: max-content;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #1f2a24;
+  color: white;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.16);
+}
+
+.tool-btn[data-tooltip]:hover::after,
+.tool-btn[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .workspace {
@@ -293,10 +379,27 @@ button {
 }
 
 .chat-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.chat-panel.drag-over::after {
+  content: "松开后添加为附件";
+  position: absolute;
+  inset: 72px 16px 118px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(31, 122, 91, 0.55);
+  border-radius: var(--radius);
+  background: rgba(248, 250, 248, 0.88);
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
 }
 
 .section {
@@ -613,7 +716,19 @@ summary.section-head::-webkit-details-marker {
 }
 
 .compact .item {
-  padding: 9px 11px;
+  padding: 7px 9px;
+  border-radius: 7px;
+}
+
+.compact .item-title {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.compact .item-meta,
+.compact .item-desc {
+  font-size: 11px;
+  line-height: 1.25;
 }
 
 .compact .item-desc {
@@ -654,8 +769,9 @@ summary.section-head::-webkit-details-marker {
 }
 
 .session-drawer .list {
-  max-height: 24vh;
+  max-height: 28vh;
   margin-top: 8px;
+  gap: 4px;
 }
 
 .session-drawer .item-title,
@@ -819,7 +935,7 @@ summary.section-head::-webkit-details-marker {
 }
 
 .quick-prompts {
-  display: flex;
+  display: none;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
@@ -881,7 +997,7 @@ summary.section-head::-webkit-details-marker {
 
 .composer-box {
   display: grid;
-  grid-template-columns: 38px 38px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 10px;
   padding: 10px 12px;
@@ -889,6 +1005,10 @@ summary.section-head::-webkit-details-marker {
   border-radius: 24px;
   background: white;
   box-shadow: var(--shadow);
+}
+
+.composer-box:hover {
+  border-color: rgba(31, 122, 91, 0.28);
 }
 
 .composer-box textarea {
@@ -1178,6 +1298,12 @@ summary.section-head::-webkit-details-marker {
     justify-content: flex-start;
   }
 
+  .tool-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -1194,18 +1320,10 @@ summary.section-head::-webkit-details-marker {
   }
 
   .composer-box {
-    grid-template-columns: 36px 36px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "clear attach input"
-      "tools tools tools";
-  }
-
-  .composer-icon {
-    grid-area: clear;
-  }
-
-  #attachBtn {
-    grid-area: attach;
+      "input"
+      "tools";
   }
 
   .composer-box textarea {

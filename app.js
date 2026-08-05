@@ -86,14 +86,11 @@
       "storageState",
       "apiState",
       "messageList",
-      "quickPrompts",
       "attachmentTray",
       "messageInput",
-      "attachmentInput",
-      "attachBtn",
       "composerModelSelect",
-      "clearBtn",
       "sendBtn",
+      "chatPanel",
       "leftPanelToggle",
       "rightPanelToggle",
       "skillBrief",
@@ -134,12 +131,8 @@
         sendMessage();
       }
     });
-    els.clearBtn.addEventListener("click", () => {
-      els.messageInput.value = "";
-      els.messageInput.focus();
-    });
-    els.attachBtn.addEventListener("click", () => els.attachmentInput.click());
-    els.attachmentInput.addEventListener("change", handleAttachmentFiles);
+    bindDropZone(els.chatPanel);
+    bindDropZone(els.messageInput);
     els.leftPanelToggle.addEventListener("click", () => togglePanel("left"));
     els.rightPanelToggle.addEventListener("click", () => togglePanel("right"));
     els.sendBtn.addEventListener("click", sendMessage);
@@ -189,7 +182,6 @@
     renderSessions();
     renderMessages();
     renderInspector();
-    renderQuickPrompts();
     renderAttachmentTray();
     renderWorkspaceStats();
     updateStatus();
@@ -348,31 +340,6 @@
     `;
   }
 
-  function renderQuickPrompts() {
-    const skill = getActiveSkill();
-    const prompts = skill
-      ? [
-          ["使用当前 Skill 起草", skill.starterPrompt],
-          ["90 天计划", "帮我做一个可执行的 90 天计划。"],
-          ["优先级排序", "把重点按优先级排序。"]
-        ]
-      : [["策略建议", "先给我一个策略建议。"]];
-    els.quickPrompts.innerHTML = prompts
-      .filter(([, prompt]) => prompt)
-      .map(
-        ([label, prompt]) =>
-          `<button class="chip" data-prompt="${escapeHtml(prompt)}" title="${escapeHtml(prompt)}">${escapeHtml(label)}</button>`
-      )
-      .join("");
-
-    els.quickPrompts.querySelectorAll("button").forEach((button) => {
-      button.addEventListener("click", () => {
-        els.messageInput.value = button.dataset.prompt;
-        els.messageInput.focus();
-      });
-    });
-  }
-
   function renderAttachmentTray() {
     if (!pendingAttachments.length) {
       els.attachmentTray.classList.add("hidden");
@@ -485,8 +452,28 @@
     };
   }
 
-  async function handleAttachmentFiles(event) {
-    const files = Array.from(event.target.files || []);
+  function bindDropZone(element) {
+    if (!element) return;
+    ["dragenter", "dragover"].forEach((eventName) => {
+      element.addEventListener(eventName, (event) => {
+        if (!event.dataTransfer?.types?.includes("Files")) return;
+        event.preventDefault();
+        els.chatPanel.classList.add("drag-over");
+      });
+    });
+    ["dragleave", "drop"].forEach((eventName) => {
+      element.addEventListener(eventName, (event) => {
+        if (!event.dataTransfer?.types?.includes("Files")) return;
+        event.preventDefault();
+        if (eventName === "drop") {
+          addAttachmentFiles(Array.from(event.dataTransfer.files || []));
+        }
+        els.chatPanel.classList.remove("drag-over");
+      });
+    });
+  }
+
+  async function addAttachmentFiles(files) {
     if (!files.length) return;
     const next = [];
     for (const file of files) {
@@ -626,7 +613,6 @@
     }
     els.messageInput.value = "";
     pendingAttachments = [];
-    els.attachmentInput.value = "";
     persist();
     renderAll();
 

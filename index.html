@@ -19,15 +19,31 @@
           </div>
         </div>
         <div class="toolbar">
-          <button id="settingsBtn" class="btn primary" type="button">设置</button>
-          <button id="newSessionBtn" class="btn" type="button">新建会话</button>
-          <button id="exportBtn" class="btn" type="button">导出工作区</button>
-          <label class="btn file-btn" tabindex="0">
-            导入工作区
+          <button id="settingsBtn" class="tool-btn primary" type="button" aria-label="设置" data-tooltip="设置">
+            <span class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.1 2.1 0 0 1-2.97 2.97l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V21.3a2.1 2.1 0 0 1-4.2 0v-.06a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.04.04a2.1 2.1 0 0 1-2.97-2.97l.04-.04A1.8 1.8 0 0 0 3.8 15a1.8 1.8 0 0 0-1.66-1.1H2.1a2.1 2.1 0 0 1 0-4.2h.06A1.8 1.8 0 0 0 3.82 8a1.8 1.8 0 0 0-.36-1.98l-.04-.04A2.1 2.1 0 0 1 6.39 3l.04.04a1.8 1.8 0 0 0 1.98.36A1.8 1.8 0 0 0 9.5 1.75V1.7a2.1 2.1 0 0 1 4.2 0v.06a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.1 2.1 0 0 1 2.97 2.97l-.04.04A1.8 1.8 0 0 0 19.4 8c.18.64.7 1.1 1.36 1.1h.14a2.1 2.1 0 0 1 0 4.2h-.14A1.8 1.8 0 0 0 19.4 15Z"/></svg>
+            </span>
+          </button>
+          <button id="newSessionBtn" class="tool-btn" type="button" aria-label="新建会话" data-tooltip="新建会话">
+            <span class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+          </button>
+          <button id="exportBtn" class="tool-btn" type="button" aria-label="导出工作区" data-tooltip="导出工作区">
+            <span class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M5 18.5h14"/></svg>
+            </span>
+          </button>
+          <label class="tool-btn file-btn" tabindex="0" aria-label="导入工作区" data-tooltip="导入工作区">
+            <span class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 21V10"/><path d="m7.5 14.5 4.5-4.5 4.5 4.5"/><path d="M5 5.5h14"/></svg>
+            </span>
             <input id="importInput" type="file" accept="application/json" />
           </label>
-          <label class="btn file-btn" tabindex="0">
-            导入 Skill
+          <label class="tool-btn file-btn" tabindex="0" aria-label="导入 Skill" data-tooltip="导入 Skill">
+            <span class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M5 20h14"/><path d="M6.5 4.5h4"/></svg>
+            </span>
             <input id="skillImportInput" type="file" accept=".md,.txt,text/markdown,text/plain" multiple />
           </label>
         </div>
@@ -72,7 +88,7 @@
           </div>
         </aside>
 
-        <section class="panel chat-panel">
+        <section id="chatPanel" class="panel chat-panel">
           <div class="chat-head">
             <div>
               <div id="activeSkillName" class="chat-title"></div>
@@ -87,13 +103,9 @@
           <div id="messageList" class="message-list"></div>
 
           <div class="composer">
-            <div id="quickPrompts" class="quick-prompts"></div>
             <div id="attachmentTray" class="attachment-tray hidden"></div>
             <div class="composer-box">
-              <button id="clearBtn" class="composer-icon" type="button" title="清空输入" aria-label="清空输入">×</button>
-              <button id="attachBtn" class="composer-icon" type="button" title="添加图片或文件" aria-label="添加图片或文件">+</button>
-              <input id="attachmentInput" class="hidden-input" type="file" multiple accept="image/*,.pdf,.txt,.csv,.json,.md,.xlsx,.docx" />
-              <textarea id="messageInput" rows="1" placeholder="输入业务背景、数据、目标或直接提问..."></textarea>
+              <textarea id="messageInput" rows="1" placeholder="输入业务背景、数据、目标或直接提问，可拖入图片/文件..."></textarea>
               <div class="composer-tools">
                 <select id="composerModelSelect" class="composer-model" title="切换模型" aria-label="切换模型"></select>
                 <button id="sendBtn" class="send-icon" type="button" aria-label="发送">发送</button>
