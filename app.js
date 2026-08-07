@@ -1689,6 +1689,10 @@
       .trim();
   }
 
+  function escapeRegExp(value) {
+    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
   function extractRouteTerms(value) {
     const text = normalizeRouteText(value);
     const terms = text.match(/[a-z0-9]{2,}|[\u4e00-\u9fa5]{2,}/g) || [];
