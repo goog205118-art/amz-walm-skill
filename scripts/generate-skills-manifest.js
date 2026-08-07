@@ -53,9 +53,30 @@ const PLATFORM_ALIASES = [
   ["eBay", ["ebay"]],
   ["WooCommerce", ["woocommerce"]],
   ["Google", ["google", "merchant center", "shopping"]],
-  ["Meta", ["meta", "facebook", "instagram"]],
+  ["Meta", ["meta"]],
   ["DTC", ["dtc", "direct-to-consumer"]],
   ["多渠道", ["multichannel", "omnichannel", "cross-platform", "multi-channel"]]
+];
+
+const PLATFORM_FIELD_KEYS = [
+  "platform",
+  "platforms",
+  "marketplace",
+  "marketplaces",
+  "supported_platform",
+  "supported_platforms",
+  "sales_channel",
+  "sales_channels"
+];
+
+const TOOL_ADAPTERS = [
+  ["profit-margin-calculator", "profit-margin"],
+  ["review-checker", "review-checker"],
+  ["product-review-analysis", "review-analysis"],
+  ["restock-alert", "restock"],
+  ["supply-chain-optimization", "restock"],
+  ["competitor-price-analysis", "competitor-price"],
+  ["competitor-price-tracker", "competitor-price"]
 ];
 
 const PHRASE_LABELS = [
@@ -372,10 +393,12 @@ function buildSkill(file, readmeIndex) {
   const readmeMeta = readmeIndex.get(id) || readmeIndex.get(dirSlug);
   const title = extractTitle(markdown) || titleFromSlug(id);
   const description = readmeMeta?.readmeDescription || frontmatter.description || extractSummary(markdown, title);
-  const groupEnglish = readmeMeta?.english || guessGroup(id, markdown);
-  const groupLabel = readmeMeta?.label || mapGroupLabel(groupEnglish);
-  const category = mapGroupCategory(groupEnglish) || detectCategory(`${id} ${description} ${markdown}`);
-  const platform = detectPlatforms(`${id} ${title} ${description} ${markdown}`);
+  const detectedGroupEnglish = readmeMeta?.english || guessGroup(id, markdown);
+  const groupEnglish = resolveKnownGroup(id, detectedGroupEnglish);
+  const groupOverridden = groupEnglish !== detectedGroupEnglish;
+  const groupLabel = groupOverridden ? mapGroupLabel(groupEnglish) : (readmeMeta?.label || mapGroupLabel(groupEnglish));
+  const category = resolveKnownCategory(id, mapGroupCategory(groupEnglish) || detectCategory(`${id} ${description} ${markdown}`));
+  const platform = detectPlatformsSafe({ id, title, description, frontmatter });
   const capabilities = extractListAfterHeading(markdown, ["capabilities", "what it does", "core capabilities", "能力", "核心能力"]);
   const workflow = extractListAfterHeading(markdown, ["how this skill works", "workflow", "process", "steps", "method", "流程", "方法"]);
   const outputs = extractListAfterHeading(markdown, ["output format", "outputs", "deliverables", "output", "输出"]);
@@ -389,16 +412,18 @@ function buildSkill(file, readmeIndex) {
     sourceName: title,
     emoji: frontmatter.emoji || readmeMeta?.emoji || "",
     category,
-    groupKey: readmeMeta?.key || slugify(groupEnglish),
+    groupKey: groupOverridden ? slugify(groupEnglish) : (readmeMeta?.key || slugify(groupEnglish)),
     groupName: groupEnglish,
     groupLabel,
-    groupEmoji: readmeMeta?.emoji || "",
-    groupOrder: readmeMeta?.order ?? 999,
+    groupEmoji: groupOverridden ? "" : (readmeMeta?.emoji || ""),
+    groupOrder: groupOverridden ? getGroupOrder(groupEnglish) : (readmeMeta?.order ?? getGroupOrder(groupEnglish)),
     platform,
     status: normalizeStatus(readmeMeta?.status),
     summary: buildChineseSummary(name, groupLabel, platform),
     sourceSummary: trimText(description, 360),
     triggers: buildTriggers(id, title, description, platform, category, groupLabel),
+    routing: buildRoutingMetadata(id, title, description, platform, category, groupLabel, capabilities),
+    toolAdapter: detectToolAdapter(id, relativePath),
     capabilities: capabilities.length ? capabilities : fallbackCapabilities(category),
     workflow: workflow.length ? workflow : ["读取业务背景与约束", "套用技能方法做诊断", "输出可执行建议与下一步动作"],
     outputs: outputs.length ? outputs : ["结构化分析", "行动清单", "关键假设"],
@@ -424,16 +449,76 @@ function parseFrontmatter(markdown) {
   const match = markdown.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return {};
   const block = match[1];
+  const parsed = parseSimpleYaml(block);
+  const nexscope = parsed.nexscope && typeof parsed.nexscope === "object" ? parsed.nexscope : {};
   return {
-    name: readYamlScalar(block, "name"),
-    description: readYamlScalar(block, "description"),
-    emoji: block.match(/emoji:\s*["']?([^"'\n]+)["']?/i)?.[1]?.trim() || ""
+    ...parsed,
+    name: parsed.name || nexscope.name || "",
+    description: parsed.description || nexscope.description || "",
+    emoji: parsed.emoji || nexscope.emoji || ""
   };
 }
 
-function readYamlScalar(block, key) {
-  const match = block.match(new RegExp(`^${key}:\\s*["']?([\\s\\S]*?)["']?\\s*$`, "im"));
-  return match ? match[1].trim().replace(/^["']|["']$/g, "") : "";
+function parseSimpleYaml(block) {
+  const root = {};
+  const stack = [{ indent: -1, value: root }];
+  let activeList = null;
+  const lines = block.split("\n");
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    const indent = line.match(/^\s*/)[0].length;
+    const content = line.trim();
+    const listMatch = content.match(/^-\s*(.*)$/);
+    if (listMatch && activeList && indent > activeList.indent) {
+      activeList.value.push(parseYamlValue(listMatch[1]));
+      continue;
+    }
+
+    const pair = content.match(/^([^:#][^:]*):(?:\s*(.*))?$/);
+    if (!pair) continue;
+    const key = pair[1].trim();
+    const rawValue = pair[2] || "";
+
+    while (stack.length > 1 && indent <= stack[stack.length - 1].indent) stack.pop();
+    const parent = stack[stack.length - 1].value;
+    if (!rawValue) {
+      const next = lines
+        .slice(index + 1)
+        .find((candidate) => candidate.trim() && !candidate.trim().startsWith("#"));
+      const nextIndent = next ? next.match(/^\s*/)[0].length : -1;
+      const value = next && nextIndent > indent && next.trim().startsWith("- ") ? [] : {};
+      parent[key] = value;
+      stack.push({ indent, value });
+      activeList = Array.isArray(value) ? { indent, value } : null;
+      continue;
+    }
+
+    const value = parseYamlValue(rawValue);
+    parent[key] = value;
+    activeList = Array.isArray(value) ? { indent, value } : null;
+  }
+
+  return root;
+}
+
+function parseYamlValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if ((text.startsWith("[") && text.endsWith("]")) || (text.startsWith("{") && text.endsWith("}"))) {
+    try {
+      return JSON.parse(text.replaceAll("'", '"'));
+    } catch {
+      return text
+        .slice(1, -1)
+        .split(",")
+        .map((item) => item.trim().replace(/^["']|["']$/g, ""))
+        .filter(Boolean);
+    }
+  }
+  if (/^(true|false)$/i.test(text)) return text.toLowerCase() === "true";
+  return text.replace(/^["']|["']$/g, "").trim();
 }
 
 function extractTitle(markdown) {
@@ -498,6 +583,150 @@ function detectPlatforms(text) {
   return matches.length ? [...new Set(matches)].slice(0, 6) : ["电商"];
 }
 
+function detectPlatformsSafe({ id, title, description, frontmatter }) {
+  const explicit = collectPlatformFields(frontmatter);
+  const explicitMatches = normalizePlatformValues(explicit);
+  if (explicitMatches.length) return explicitMatches;
+
+  const controlledText = `${id} ${title}`;
+  const inferred = PLATFORM_ALIASES
+    .filter(([, aliases]) => aliases.some((alias) => hasControlledToken(controlledText, alias)))
+    .map(([name]) => name);
+  return inferred.length ? [...new Set(inferred)].slice(0, 6) : ["\u7535\u5546"];
+}
+
+function collectPlatformFields(frontmatter) {
+  const values = [];
+  const nested = frontmatter?.nexscope && typeof frontmatter.nexscope === "object" ? frontmatter.nexscope : {};
+  for (const key of PLATFORM_FIELD_KEYS) {
+    if (frontmatter && frontmatter[key] !== undefined) values.push(frontmatter[key]);
+    if (nested[key] !== undefined) values.push(nested[key]);
+  }
+  return values.flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean);
+}
+
+function normalizePlatformValues(values) {
+  const result = [];
+  for (const value of values) {
+    const text = String(value).trim().toLowerCase();
+    const match = PLATFORM_ALIASES.find(([, aliases]) =>
+      aliases.some((alias) => text === alias || text.includes(alias))
+    );
+    if (match) result.push(match[0]);
+  }
+  return [...new Set(result)].slice(0, 6);
+}
+
+function hasControlledToken(text, alias) {
+  const lower = String(text || "").toLowerCase();
+  if (/^[a-z0-9 -]+$/i.test(alias)) {
+    return new RegExp(`(^|[^a-z0-9])${escapeRegExp(alias)}([^a-z0-9]|$)`, "i").test(lower);
+  }
+  return lower.includes(alias.toLowerCase());
+}
+
+function buildRoutingMetadata(id, title, description, platform, category, groupLabel, capabilities) {
+  const source = `${id} ${title} ${description} ${groupLabel}`.toLowerCase();
+  const phraseMap = [
+    ["listing title keyword optimization", ["listing title", "title keyword", "标题关键词", "标题优化", "listing标题"]],
+    ["influencer selling", ["tiktok influencer", "creator selling", "达人带货", "达人推广", "网红带货", "influencer marketing"]],
+    ["restock planning", ["stockout", "restock", "reorder point", "快断货", "补货", "安全库存", "再订货点"]],
+    ["profit calculation", ["profit margin", "profit calculator", "利润", "毛利", "净利", "利润率"]],
+    ["review authenticity", ["review checker", "fake review", "评论检测", "评论真实性", "刷评"]],
+    ["competitor pricing", ["competitor price", "price tracking", "竞品价格", "竞品售价", "价格追踪"]]
+  ];
+  const phrases = phraseMap
+    .filter(([, variants]) => variants.some((variant) => source.includes(variant.toLowerCase())))
+    .flatMap(([, variants]) => variants);
+  if (/product-title-optimization/.test(id)) {
+    phrases.push("listing title", "title keyword", "标题关键词", "标题优化", "listing标题");
+  }
+  if (/product-page-seo/.test(id)) {
+    phrases.push("product page seo", "listing seo", "listing seo optimization");
+  }
+  if (/ecommerce-keyword-research/.test(id)) {
+    phrases.push("keyword research", "search keywords", "keyword research optimization");
+  }
+  if (/influencer-outreach|influencer-marketing/.test(id)) {
+    phrases.push("tiktok influencer", "creator selling", "达人带货", "达人推广", "网红带货", "influencer marketing");
+  }
+  if (/restock-alert|inventory-tracking|supply-chain-optimization/.test(id)) {
+    phrases.push("stockout", "restock", "reorder point", "快断货", "补货", "安全库存", "再订货点");
+  }
+  const tokens = source
+    .split(/[^a-zA-Z0-9\u4e00-\u9fa5]+/)
+    .filter((token) => token.length >= 2)
+    .slice(0, 40);
+
+  return {
+    phrases: [...new Set(phrases)],
+    tokens: [...new Set(tokens)],
+    platformHints: platform,
+    category,
+    intent: inferIntent(id, source),
+    capabilities: (capabilities || []).slice(0, 8)
+  };
+}
+
+function inferIntent(id, source) {
+  const normalizedId = String(id || "").toLowerCase();
+  if (/restock|reorder|inventory-tracking|supply-chain/.test(normalizedId)) return "restock";
+  if (/influencer|creator|affiliate/.test(normalizedId)) return "influencer";
+  if (/competitor-price/.test(normalizedId) || /competitor price|price tracking|竞品价格|竞品售价|价格追踪/.test(source)) return "competitor-price";
+  if (/profit|margin|pricing|price/.test(normalizedId)) return "profit";
+  if (/review|feedback/.test(normalizedId)) return "review";
+  if (/product-title|product-page-seo|keyword/.test(normalizedId)) return "listing-title";
+  const known = [
+    ["title", "listing-title"],
+    ["keyword", "keyword-research"],
+    ["influencer", "influencer"],
+    ["affiliate", "affiliate"],
+    ["restock", "restock"],
+    ["inventory", "inventory"],
+    ["profit", "profit"],
+    ["margin", "profit"],
+    ["review", "review"],
+    ["competitor-price", "competitor-price"],
+    ["price", "pricing"],
+    ["supply-chain", "supply-chain"],
+    ["shipping", "shipping"],
+    ["ads", "advertising"],
+    ["marketing", "marketing"]
+  ];
+  return known.find(([token]) => id.includes(token) || source.includes(token))?.[1] || "ecommerce";
+}
+
+function resolveKnownGroup(id, fallback) {
+  const normalizedId = String(id || "").toLowerCase();
+  if (/restock|reorder|inventory-tracking|supply-chain/.test(normalizedId)) return "Supply Chain & Logistics";
+  if (/influencer|creator|affiliate/.test(normalizedId)) return "E-Commerce Marketing";
+  if (/competitor-price/.test(normalizedId)) return "Competitor Analysis";
+  if (/profit|margin|pricing|price/.test(normalizedId)) return "Pricing & Profitability";
+  if (/review|feedback|competitor/.test(normalizedId)) return "Competitor Analysis";
+  if (/product-title|product-page-seo|keyword/.test(normalizedId)) return "Listing Optimization";
+  return fallback;
+}
+
+function resolveKnownCategory(id, fallback) {
+  const normalizedId = String(id || "").toLowerCase();
+  if (/restock|reorder|inventory-tracking|supply-chain/.test(normalizedId)) return "operations";
+  if (/influencer|creator|affiliate/.test(normalizedId)) return "marketing";
+  if (/competitor-price/.test(normalizedId)) return "research";
+  if (/profit|margin|pricing|price/.test(normalizedId)) return "finance";
+  if (/review|feedback|competitor/.test(normalizedId)) return "research";
+  if (/product-title|product-page-seo|keyword/.test(normalizedId)) return "content";
+  return fallback;
+}
+
+function detectToolAdapter(id, relativePath) {
+  const match = TOOL_ADAPTERS.find(([prefix]) => id === prefix || id.startsWith(`${prefix}-`) || relativePath.includes(`/${prefix}/`));
+  return match ? match[1] : "";
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function detectCategory(text) {
   const lower = text.toLowerCase();
   const hit = CATEGORY_FALLBACKS.find(([, tokens]) => tokens.some((token) => lower.includes(token.toLowerCase())));
@@ -507,6 +736,11 @@ function detectCategory(text) {
 function mapGroupLabel(groupEnglish) {
   const hit = GROUP_LABELS.find(([english]) => groupEnglish.includes(english));
   return hit ? hit[1] : groupEnglish || "其他技能";
+}
+
+function getGroupOrder(groupEnglish) {
+  const index = GROUP_LABELS.findIndex(([english]) => groupEnglish.includes(english));
+  return index >= 0 ? index : 999;
 }
 
 function mapGroupCategory(groupEnglish) {

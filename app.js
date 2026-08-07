@@ -41,6 +41,20 @@
   };
   const MAX_ATTACHMENT_BYTES = 6 * 1024 * 1024;
   const MAX_TEXT_CHARS = 60000;
+  const ROUTER_TOP_K = 5;
+  const ROUTER_MODEL_MIN_CONFIDENCE = 0.42;
+  const ROUTER_GENERIC_TERMS = new Set([
+    "ecommerce",
+    "product",
+    "business",
+    "analysis",
+    "strategy",
+    "tool",
+    "online",
+    "market",
+    "shop",
+    "seller"
+  ]);
 
   const els = {};
   const state = loadWorkspace();
@@ -68,6 +82,7 @@
       "modelInput",
       "protocolInput",
       "modelListInput",
+      "refreshModelsBtn",
       "apiKeyInput",
       "endpointInput",
       "settingsBtn",
@@ -121,6 +136,15 @@
     ].forEach((id) => {
       els[id] = document.getElementById(id);
     });
+    if (!els.refreshModelsBtn && els.modelListInput) {
+      const button = document.createElement("button");
+      button.id = "refreshModelsBtn";
+      button.className = "btn subtle";
+      button.type = "button";
+      button.textContent = "\u5237\u65b0\u53ef\u7528\u6a21\u578b";
+      els.modelListInput.parentElement.appendChild(button);
+      els.refreshModelsBtn = button;
+    }
   }
 
   function bindEvents() {
@@ -186,6 +210,7 @@
     els.modelListInput.addEventListener("change", () => {
       renderModelOptions(els.modelInput.value, parseModelList(els.modelListInput.value));
     });
+    els.refreshModelsBtn.addEventListener("click", refreshAvailableModels);
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       if (!els.settingsModal.classList.contains("hidden")) {
@@ -557,9 +582,42 @@
 
     els.capabilityList.innerHTML = skill ? skill.capabilities.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "";
     els.workflowList.innerHTML = skill ? skill.workflow.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "";
-    els.routingNote.innerHTML = session
-      ? `${escapeHtml(state.lastRouteReason || "路由会先进行轻量关键词匹配，未命中时继续使用当前技能。")}`
-      : "暂无活动会话。";
+    els.routingNote.innerHTML = session ? renderRouteTrace() : "暂无活动会话。";
+  }
+
+  function renderRouteTrace() {
+    const trace = state.routeTrace;
+    if (!trace) return escapeHtml(state.lastRouteReason || "暂无路由记录");
+    const strategyLabels = {
+      "local-top5-model-selection": "本地 Top 5 + 模型结构化选择",
+      "local-recall": "本地召回",
+      "local-recall-fallback": "本地召回兜底"
+    };
+    const candidates = Array.isArray(trace.candidates) ? trace.candidates : [];
+    const selected = trace.selectedSkillId || "未命中";
+    const confidence = `${(Number(trace.confidence || 0) * 100).toFixed(0)}%`;
+    const candidateHtml = candidates
+      .slice(0, ROUTER_TOP_K)
+      .map((candidate, index) => `
+        <div class="route-candidate ${candidate.skillId === selected ? "selected" : ""}">
+          <span class="route-rank">${index + 1}</span>
+          <span class="route-candidate-main">
+            <strong>${escapeHtml(candidate.name || candidate.skillId)}</strong>
+            <small>${Number(candidate.score || 0).toFixed(1)} 分${candidate.reasons?.length ? ` · ${escapeHtml(candidate.reasons.slice(0, 2).join(" / "))}` : ""}</small>
+          </span>
+        </div>
+      `)
+      .join("");
+    return `
+      <div class="route-trace">
+        <div class="route-trace-summary">
+          <strong>${escapeHtml(selected)}</strong>
+          <span>${escapeHtml(strategyLabels[trace.strategy] || trace.strategy || "本地召回")} · 置信度 ${confidence}</span>
+        </div>
+        ${trace.reason ? `<p class="route-reason">${escapeHtml(trace.reason)}</p>` : ""}
+        ${candidateHtml ? `<details class="route-candidates"><summary>查看 Top ${Math.min(ROUTER_TOP_K, candidates.length)} 候选</summary>${candidateHtml}</details>` : ""}
+      </div>
+    `;
   }
 
   function renderWorkspaceStats() {
@@ -828,6 +886,7 @@
       skillId: skill ? skill.id : window.DEFAULT_WORKSPACE.activeSkillId,
       createdAt: now,
       updatedAt: now,
+      artifacts: [],
       messages: [
         {
           role: "assistant",
@@ -876,12 +935,27 @@
     els.sendBtn.disabled = true;
     const userContent = input || "请分析我上传的附件，并给出可执行建议。";
 
-    const routed = routeSkill(userContent);
+    const routed = await routeSkill(userContent);
     const routedSkill = routed.skill || getActiveSkill();
     if (routedSkill && routedSkill.id !== state.activeSkillId) {
       state.activeSkillId = routedSkill.id;
     }
-    state.lastRouteReason = buildRouteReason(userContent, routedSkill, routed.matches);
+    state.lastRouteReason = buildRouteReason(userContent, routedSkill, routed.matches, routed);
+    state.routeTrace = {
+      query: userContent,
+      selectedSkillId: routedSkill?.id || "",
+      strategy: routed.strategy,
+      score: routed.score || 0,
+      confidence: routed.confidence || 0,
+      reason: routed.reason || "",
+      candidates: (routed.candidates || []).map((candidate) => ({
+        skillId: candidate.skill.id,
+        name: candidate.skill.name,
+        score: candidate.score,
+        reasons: candidate.reasons
+      })),
+      timestamp: new Date().toISOString()
+    };
 
     const session = getActiveSession();
     if (!session) {
@@ -917,9 +991,7 @@
     try {
       const skill = getActiveSkill();
       const onUpdate = createStreamUpdater(assistantMessage);
-      const reply = state.settings.streamOutput
-        ? await generateReplyStream(session, skill, userMessage, onUpdate)
-        : await generateReply(session, skill, userMessage);
+      const reply = await generateReplyOrTool(session, skill, userMessage, onUpdate);
       onUpdate(reply || assistantMessage.content || "没有收到模型输出。", { flush: true });
     } catch (error) {
       updateMessageContent(assistantMessage, `请求失败：${error.message}`);
@@ -933,6 +1005,30 @@
       renderWorkspaceStats();
       updateStatus();
     }
+  }
+
+  async function generateReplyOrTool(session, skill, userMessage, onUpdate) {
+    const toolResult = runSkillToolAdapter(skill, userMessage);
+    if (!toolResult) {
+      return state.settings.streamOutput
+        ? generateReplyStream(session, skill, userMessage, onUpdate)
+        : generateReply(session, skill, userMessage);
+    }
+
+    const message = session.messages.find((item) => item.id === userMessage.id);
+    const assistant = session.messages.find((item) => item.role === "assistant" && item.loading);
+    if (assistant) {
+      assistant.tool = toolResult.tool;
+      assistant.artifact = toolResult.artifact || null;
+    }
+    session.artifacts = [...(session.artifacts || []), {
+      ...toolResult,
+      createdAt: new Date().toISOString()
+    }];
+    if (message) message.toolInput = toolResult.input || null;
+    return state.settings.streamOutput
+      ? streamLocalText(toolResult.content, onUpdate)
+      : toolResult.content;
   }
 
   async function generateReply(session, skill, userMessage) {
@@ -1079,12 +1175,245 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function runSkillToolAdapter(skill, userMessage) {
+    if (!skill) return null;
+    const adapter = skill.toolAdapter || inferToolAdapter(skill.id);
+    if (!adapter) return null;
+    const input = collectToolInput(userMessage);
+    if (adapter === "profit-margin") return runProfitMarginTool(input, skill);
+    if (adapter === "review-checker" || adapter === "review-analysis") return runReviewTool(input, skill, adapter);
+    if (adapter === "restock") return runRestockTool(input, skill);
+    if (adapter === "competitor-price") return runCompetitorPriceTool(input, skill);
+    return null;
+  }
+
+  function inferToolAdapter(skillId) {
+    const id = String(skillId || "");
+    if (id.includes("profit-margin-calculator")) return "profit-margin";
+    if (id.includes("review-checker")) return "review-checker";
+    if (id === "product-review-analysis") return "review-analysis";
+    if (id.includes("restock-alert") || id.includes("supply-chain-optimization")) return "restock";
+    if (id.includes("competitor-price-analysis") || id.includes("competitor-price-tracker")) return "competitor-price";
+    return "";
+  }
+
+  function collectToolInput(userMessage) {
+    const attachments = Array.isArray(userMessage?.attachments) ? userMessage.attachments : [];
+    const texts = attachments.map((attachment) => attachment.text || "").filter(Boolean);
+    const records = texts.flatMap(parseStructuredRecords);
+    return {
+      text: String(userMessage?.content || ""),
+      attachments,
+      records,
+      rawText: texts.join("\n")
+    };
+  }
+
+  function parseStructuredRecords(text) {
+    const source = String(text || "").trim();
+    if (!source) return [];
+    try {
+      const json = JSON.parse(source);
+      if (Array.isArray(json)) return json.filter((item) => item && typeof item === "object");
+      if (json && typeof json === "object") return Array.isArray(json.items) ? json.items : [json];
+    } catch {
+      // Continue with CSV parsing.
+    }
+    const lines = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (lines.length < 2 || !lines[0].includes(",")) return [];
+    const headers = splitCsvLine(lines[0]).map(normalizeFieldName);
+    return lines.slice(1).map((line) => {
+      const values = splitCsvLine(line);
+      return headers.reduce((row, header, index) => {
+        row[header] = values[index] || "";
+        return row;
+      }, {});
+    });
+  }
+
+  function splitCsvLine(line) {
+    const result = [];
+    let current = "";
+    let quoted = false;
+    for (const char of String(line || "")) {
+      if (char === '"') {
+        quoted = !quoted;
+      } else if (char === "," && !quoted) {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  function normalizeFieldName(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "")
+      .replace(/[()（）]/g, "");
+  }
+
+  function readNumber(input, aliases) {
+    const source = typeof input === "object" ? input : {};
+    for (const alias of aliases) {
+      const key = normalizeFieldName(alias);
+      const entry = Object.entries(source).find(([name]) => normalizeFieldName(name) === key);
+      if (entry) {
+        const value = Number(String(entry[1]).replace(/[^0-9.-]/g, ""));
+        if (Number.isFinite(value)) return value;
+      }
+    }
+    const text = typeof input === "string" ? input : "";
+    for (const alias of aliases) {
+      const match = text.match(new RegExp(`${escapeRegExp(alias)}[^0-9-]*(-?[0-9]+(?:\\.[0-9]+)?)`, "i"));
+      if (match) return Number(match[1]);
+    }
+    return null;
+  }
+
+  function readTextValue(input, aliases) {
+    if (!input || typeof input !== "object") return "";
+    for (const alias of aliases) {
+      const key = normalizeFieldName(alias);
+      const entry = Object.entries(input).find(([name]) => normalizeFieldName(name) === key);
+      if (entry && entry[1] !== undefined) return String(entry[1]).trim();
+    }
+    return "";
+  }
+
+  function formatMoney(value) {
+    return Number.isFinite(Number(value)) ? `$${Number(value).toFixed(2)}` : "-";
+  }
+
+  function makeToolResult(tool, content, artifact, input) {
+    return { tool, content, artifact, input };
+  }
+
+  function runProfitMarginTool(input, skill) {
+    const platform = (skill.platform || []).find((item) => item !== "E-Commerce") || "Amazon";
+    const sourceRows = input.records.length ? input.records : [input.text];
+    const rows = sourceRows.map((row) => {
+      const price = readNumber(row, ["selling_price", "selling price", "sale_price", "sellingPrice", "\u552e\u4ef7", "\u9500\u552e\u4ef7", "price"]);
+      const productCost = readNumber(row, ["product_cost", "product cost", "purchase_price", "productCost", "\u91c7\u8d2d\u4ef7", "\u91c7\u8d2d\u6210\u672c", "\u4ea7\u54c1\u6210\u672c", "cost"]);
+      const shipping = readNumber(row, ["shipping_cost", "shipping cost", "shippingCost", "\u7269\u6d41\u6210\u672c", "\u8fd0\u8d39", "shipping"]) || 0;
+      const fulfillment = readNumber(row, ["fba_fulfillment_fee", "fulfillment_fee", "fba_fee", "wfs_fee", "fbt_fee", "fulfillmentFee", "\u914d\u9001\u8d39", "\u5c65\u7ea6\u8d39"]) || 0;
+      const storage = readNumber(row, ["storage_fee", "fba_storage_fee", "storageFee", "\u4ed3\u50a8\u8d39"]) || 0;
+      const adRatio = readNumber(row, ["ad_spend_ratio", "ad_ratio", "ad spend ratio", "adRatio", "\u5e7f\u544a\u8d39\u7387", "\u5e7f\u544a\u5360\u6bd4"]) || 0;
+      const otherFees = readNumber(row, ["other_fees", "other fees", "otherFees", "\u5176\u4ed6\u8d39\u7528"]) || 0;
+      const referralRate = platform === "Amazon" ? 0.15 : platform === "Walmart" ? 0.15 : platform === "TikTok Shop" ? 0.06 : 0.029;
+      if (!Number.isFinite(price) || !Number.isFinite(productCost)) return { missing: true, platform };
+      const referral = price * referralRate;
+      const fulfillmentFee = fulfillment || (platform === "Amazon" ? 3.22 : 0);
+      const ad = price * (adRatio > 1 ? adRatio / 100 : adRatio);
+      const totalCost = productCost + shipping + fulfillmentFee + storage + referral + ad + otherFees;
+      const profit = price - totalCost;
+      return {
+        sku: readTextValue(row, ["sku", "asin", "product_id", "\u5546\u54c1", "\u4ea7\u54c1"]) || "SKU",
+        price,
+        totalCost,
+        profit,
+        margin: price ? profit / price : 0,
+        breakEven: Math.max(0, (productCost + shipping + fulfillmentFee + storage + otherFees) / (1 - referralRate - (adRatio > 1 ? adRatio / 100 : adRatio)))
+      };
+    });
+    if (rows.every((row) => row.missing)) {
+      return makeToolResult("profit-margin", "\u8bf7\u8865\u5145\u5229\u6da6\u8ba1\u7b97\u53c2\u6570\uff1a\u552e\u4ef7\u3001\u4ea7\u54c1\u6210\u672c\u3002\u53ef\u9009\uff1a\u8fd0\u8d39\u3001\u5e73\u53f0\u8d39\u3001\u5e7f\u544a\u8d39\u7387\u3001\u4ed3\u50a8\u8d39\u3001\u5176\u4ed6\u8d39\u7528\u3002", null, { platform });
+    }
+    const valid = rows.filter((row) => !row.missing);
+    const lines = [`## \u5229\u6da6\u8ba1\u7b97\u5de5\u5177\u7ed3\u679c`, `\u5e73\u53f0\uff1a${platform}`, ""];
+    valid.forEach((row) => lines.push(`- ${row.sku}\uff1a\u552e\u4ef7 ${formatMoney(row.price)}\uff0c\u603b\u6210\u672c ${formatMoney(row.totalCost)}\uff0c\u51c0\u5229\u6da6 ${formatMoney(row.profit)}\uff0c\u51c0\u5229\u6da6\u7387 ${(row.margin * 100).toFixed(1)}%\uff0c\u4fdd\u672c\u4ef7 ${formatMoney(row.breakEven)}`));
+    return makeToolResult("profit-margin", lines.join("\n"), { type: "profit-margin", rows: valid }, { platform });
+  }
+
+  function runReviewTool(input, skill, adapter) {
+    const rows = input.records.length ? input.records : input.rawText.split(/\r?\n/).filter(Boolean).map((content) => ({ content }));
+    const reviews = rows.map((row) => ({
+      content: readTextValue(row, ["content", "review", "review_text", "body", "\u8bc4\u8bba", "\u8bc4\u8bba\u5185\u5bb9", "text"]) || String(row),
+      rating: readNumber(row, ["rating", "stars", "score", "\u8bc4\u5206", "\u661f\u7ea7"])
+    })).filter((row) => row.content && row.content !== "[object Object]");
+    if (!reviews.length) {
+      return makeToolResult(adapter, "\u8bf7\u63d0\u4f9b\u8bc4\u8bba\u6587\u672c\uff0c\u53ef\u76f4\u63a5\u7c98\u8d34\uff0c\u6216\u62d6\u5165 CSV/JSON \u6587\u4ef6\u3002", null, {});
+    }
+    const normalized = reviews.map((row) => row.content.toLowerCase().replace(/\s+/g, " ").trim());
+    const suspicious = [];
+    normalized.forEach((content, index) => {
+      const duplicate = normalized.filter((item) => item === content).length > 1;
+      const generic = content.length < 18 || /great product|good product|love it|awesome/i.test(content);
+      const mismatch = reviews[index].rating === 1 && /great|excellent|love|perfect/i.test(content);
+      const risk = (duplicate ? 45 : 0) + (generic ? 25 : 0) + (mismatch ? 20 : 0);
+      if (risk >= 40) suspicious.push({ index: index + 1, risk, content: reviews[index].content });
+    });
+    const riskScore = Math.min(100, Math.round((suspicious.length / reviews.length) * 100));
+    const content = [
+      `## \u8bc4\u8bba\u68c0\u6d4b\u7ed3\u679c`,
+      `\u6837\u672c\u6570\uff1a${reviews.length}\uff0c\u53ef\u7591\u6bd4\u4f8b\uff1a${riskScore}%`,
+      suspicious.length ? `\u53ef\u7591\u9879\uff1a${suspicious.slice(0, 8).map((item) => `#${item.index}(${item.risk})`).join("\u3001")}` : "\u672a\u53d1\u73b0\u9ad8\u98ce\u9669\u91cd\u590d\u6a21\u5f0f\u3002",
+      "",
+      "\u6ce8\uff1a\u8fd9\u662f\u524d\u7aef\u786e\u5b9a\u6027\u521d\u7b5b\uff0c\u53ef\u4ee5\u518d\u8ba9\u6a21\u578b\u505a\u8bed\u4e49\u590d\u6838\u3002"
+    ].join("\n");
+    return makeToolResult(adapter, content, { type: adapter, total: reviews.length, riskScore, suspicious }, { total: reviews.length });
+  }
+
+  function runRestockTool(input, skill) {
+    const row = input.records[0] || input.text;
+    const dailySales = readNumber(row, ["daily_sales", "sales_velocity", "daily sales", "dailySales", "\u65e5\u5747\u9500\u91cf", "\u65e5\u9500\u91cf", "\u9500\u91cf"]);
+    const currentStock = readNumber(row, ["current_stock", "stock", "available_stock", "currentStock", "\u5f53\u524d\u5e93\u5b58", "\u53ef\u552e\u5e93\u5b58", "\u5e93\u5b58", "\u5e93\u5b58\u91cf"]);
+    const leadTime = readNumber(row, ["lead_time_days", "lead time", "restock_days", "leadTime", "\u8865\u8d27\u5468\u671f", "\u8865\u8d27\u5929\u6570", "\u5230\u8d27\u5929\u6570", "\u4ea4\u8d27\u5929\u6570", "\u4f9b\u8d27\u5929\u6570"]);
+    const safetyDays = readNumber(row, ["safety_days", "safety stock days", "safetyDays", "\u5b89\u5168\u5e93\u5b58\u5929\u6570"]) || 7;
+    if (![dailySales, currentStock, leadTime].every((value) => Number.isFinite(value)) || dailySales <= 0) {
+      return makeToolResult("restock", "\u8bf7\u8865\u5145\u5e93\u5b58\u8865\u8d27\u53c2\u6570\uff1a\u65e5\u5747\u9500\u91cf\u3001\u5f53\u524d\u5e93\u5b58\u3001\u8865\u8d27\u5468\u671f\uff08\u5929\uff09\u3002\u53ef\u9009\uff1a\u5b89\u5168\u5e93\u5b58\u5929\u6570\u3002", null, {});
+    }
+    const reorderPoint = dailySales * (leadTime + safetyDays);
+    const stockoutDays = currentStock / dailySales;
+    const orderQuantity = Math.max(0, Math.ceil(reorderPoint - currentStock));
+    const risk = stockoutDays <= leadTime ? "\u9ad8" : stockoutDays <= leadTime + safetyDays ? "\u4e2d" : "\u4f4e";
+    const content = [
+      "## \u5e93\u5b58\u8865\u8d27\u5de5\u5177\u7ed3\u679c",
+      `\u65e5\u5747\u9500\u91cf ${dailySales}\uff0c\u5f53\u524d\u5e93\u5b58 ${currentStock}\uff0c\u8865\u8d27\u5468\u671f ${leadTime} \u5929`,
+      `\u9884\u8ba1\u65ad\u8d27\u5929\u6570\uff1a${stockoutDays.toFixed(1)} \u5929\uff0c\u98ce\u9669\uff1a${risk}`,
+      `\u5efa\u8bae\u518d\u8ba2\u70b9\uff1a${Math.ceil(reorderPoint)}\uff0c\u5efa\u8bae\u8865\u8d27\u91cf\uff1a${orderQuantity}`,
+      "\u8ba1\u7b97\u53e3\u5f84\uff1a\u65e5\u5747\u9500\u91cf \u00d7\uff08\u8865\u8d27\u5468\u671f\uff0b\u5b89\u5168\u5e93\u5b58\u5929\u6570\uff09\u3002"
+    ].join("\n");
+    return makeToolResult("restock", content, { type: "restock", dailySales, currentStock, leadTime, safetyDays, reorderPoint, stockoutDays, orderQuantity, risk }, { dailySales, currentStock, leadTime, safetyDays });
+  }
+
+  function runCompetitorPriceTool(input, skill) {
+    const rows = input.records.map((row) => ({
+      name: readTextValue(row, ["name", "sku", "product", "competitor_name", "title", "\u4ea7\u54c1", "\u7ade\u54c1"]) || "\u5546\u54c1",
+      price: readNumber(row, ["price", "competitor_price", "competitorPrice", "\u4ef7\u683c", "\u7ade\u54c1\u4ef7\u683c"])
+    })).filter((row) => Number.isFinite(row.price));
+    if (!rows.length) {
+      return makeToolResult("competitor-price", "\u8bf7\u63d0\u4f9b\u7ade\u54c1\u540d\u79f0\u548c\u4ef7\u683c\uff0c\u53ef\u4f7f\u7528 CSV/JSON \u9644\u4ef6\u3002", null, {});
+    }
+    const prices = rows.map((row) => row.price);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const avg = prices.reduce((sum, value) => sum + value, 0) / prices.length;
+    const content = [
+      "## \u7ade\u54c1\u4ef7\u683c\u5de5\u5177\u7ed3\u679c",
+      `\u6837\u672c ${rows.length} \u4e2a\uff0c\u6700\u4f4e ${formatMoney(min)}\uff0c\u5747\u503c ${formatMoney(avg)}\uff0c\u6700\u9ad8 ${formatMoney(max)}`,
+      ...rows.slice(0, 10).map((row) => `- ${row.name}\uff1a${formatMoney(row.price)}`)
+    ].join("\n");
+    return makeToolResult("competitor-price", content, { type: "competitor-price", rows, min, max, avg }, { count: rows.length });
+  }
+
   function buildPromptMessages(session, skill) {
     const capabilities = getCapabilitySettings();
     const contextDepth = capabilities.longContext ? 16 : 8;
-    const recent = session.messages
+    const eligibleMessages = session.messages
       .filter((message) => !message.loading)
-      .slice(-contextDepth)
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+        attachments: message.attachments || []
+      }));
+    const context = capabilities.autoContext
+      ? buildCompressedContext(eligibleMessages, contextDepth)
+      : eligibleMessages.slice(-contextDepth);
+    const recent = context
       .map((message) => ({
         role: message.role,
         content: message.content,
@@ -1103,6 +1432,24 @@
       ].filter(Boolean).join(" ")
     };
     return [system, ...recent];
+  }
+
+  function buildCompressedContext(messages, contextDepth) {
+    if (messages.length <= contextDepth + 4) return messages.slice(-contextDepth);
+    const older = messages.slice(0, -contextDepth);
+    const recent = messages.slice(-contextDepth);
+    const summary = older
+      .map((message) => `${message.role === "user" ? "用户" : "助手"}：${summarizeInput(message.content || "")}`)
+      .filter((line) => line.length > 4)
+      .slice(-12)
+      .join("\n");
+    return [
+      {
+        role: "system",
+        content: `历史上下文摘要（自动压缩）：\n${summary}`
+      },
+      ...recent
+    ];
   }
 
   function buildDemoReply(skill, userMessage) {
@@ -1128,7 +1475,7 @@
     return lines.join("\n");
   }
 
-  function routeSkill(text) {
+  function legacyRouteSkill(text) {
     const haystack = text.toLowerCase();
     let winner = null;
     let score = 0;
@@ -1159,7 +1506,269 @@
     return score > 0 ? { skill: winner, matches } : { skill: null, matches: [] };
   }
 
-  function buildRouteReason(text, skill, matches) {
+  async function routeSkill(text) {
+    const candidates = recallSkillCandidates(text, ROUTER_TOP_K);
+    if (!candidates.length) {
+      return {
+        skill: null,
+        matches: [],
+        candidates: [],
+        strategy: "local-recall",
+        score: 0,
+        confidence: 0,
+        reason: "没有候选 skill"
+      };
+    }
+
+    const localWinner = candidates[0];
+    if (!state.settings.apiKey || localWinner.score < 3) {
+      return {
+        skill: localWinner.skill,
+        matches: localWinner.reasons,
+        candidates,
+        strategy: "local-recall",
+        score: localWinner.score,
+        confidence: localWinner.confidence,
+        reason: "本地召回结果"
+      };
+    }
+
+    try {
+      const decision = await requestModelRouteDecision(text, candidates);
+      const selected = candidates.find((candidate) => candidate.skill.id === decision.skillId);
+      if (selected && Number(decision.confidence) >= ROUTER_MODEL_MIN_CONFIDENCE) {
+        return {
+          skill: selected.skill,
+          matches: selected.reasons,
+          candidates,
+          strategy: "local-top5-model-selection",
+          score: selected.score,
+          confidence: Number(decision.confidence),
+          reason: decision.reason || "模型在本地 Top 5 候选中完成结构化选择"
+        };
+      }
+    } catch {
+      // Routing must remain usable when the model endpoint is unavailable.
+    }
+
+    return {
+      skill: localWinner.skill,
+      matches: localWinner.reasons,
+      candidates,
+      strategy: "local-recall-fallback",
+      score: localWinner.score,
+      confidence: localWinner.confidence,
+      reason: "模型路由不可用，回退到本地 Top 5 召回首选"
+    };
+  }
+
+  function recallSkillCandidates(text, limit = ROUTER_TOP_K) {
+    const query = normalizeRouteText(text);
+    const queryTerms = new Set(extractRouteTerms(query));
+    const queryPlatforms = detectQueryPlatforms(query);
+    return allSkills()
+      .map((skill) => scoreSkillCandidate(skill, query, queryTerms, queryPlatforms))
+      .filter((candidate) => candidate.score > 0)
+      .sort((a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name, "zh-CN"))
+      .slice(0, limit)
+      .map((candidate, index, list) => ({
+        ...candidate,
+        rank: index + 1,
+        confidence: calculateCandidateConfidence(candidate, list)
+      }));
+  }
+
+  function scoreSkillCandidate(skill, query, queryTerms, queryPlatforms) {
+    const routing = skill.routing || {};
+    const phrases = [...(routing.phrases || []), ...(skill.triggers || [])].filter(Boolean);
+    const tokens = [
+      ...(routing.tokens || []),
+      skill.id,
+      skill.name,
+      skill.sourceName,
+      skill.category,
+      skill.groupName,
+      skill.groupLabel,
+      ...(skill.platform || []),
+      ...(skill.capabilities || [])
+    ].filter(Boolean);
+    let score = 0;
+    const reasons = [];
+    const normalizedQuery = normalizeRouteText(query);
+    const queryHasCompetitorPrice = /竞品.{0,4}(价格|售价)|竞争对手.{0,4}(价格|售价)|competitor.{0,12}price|price.{0,12}(competitor|tracking)/i.test(query);
+    const queryHasProfit = /利润|毛利|净利|利润率|profit|margin/i.test(query);
+    const skillIsCompetitorPrice = /competitor-price/.test(skill.id) || routing.intent === "competitor-price";
+    const skillIsProfit = routing.intent === "profit" || /profit-margin|pricing-strategy|price-optimization|dynamic-pricing/.test(skill.id);
+    const skillIsProfitCalculator = /^profit-margin-calculator/.test(skill.id);
+    const queryHasTitleOptimization = /listing.{0,8}(title|keyword)|title.{0,8}(keyword|optimization)|\u6807\u9898|\u5173\u952e\u8bcd/i.test(query);
+    const queryHasPriceComparison = /\u5bf9\u6bd4|\u5206\u6790|compare|comparison|analy[sz]e/i.test(query);
+    const queryHasPriceTracking = /\u8ffd\u8e2a|\u76d1\u63a7|tracking|monitor/i.test(query);
+
+    for (const phrase of phrases) {
+      const normalizedPhrase = normalizeRouteText(phrase);
+      if (normalizedPhrase.length >= 3 && normalizedQuery.includes(normalizedPhrase)) {
+        const weight = normalizedPhrase.length >= 6 ? 12 : 7;
+        score += weight;
+        reasons.push(`短语:${phrase}`);
+      }
+    }
+
+    if (queryHasCompetitorPrice && skillIsCompetitorPrice) {
+      score += 18;
+      reasons.push("任务:竞品价格");
+    } else if (queryHasCompetitorPrice && skillIsProfit) {
+      score -= 12;
+    }
+    if (queryHasProfit && skillIsProfit) {
+      score += 10;
+      reasons.push("任务:利润计算");
+    } else if (queryHasProfit && skillIsCompetitorPrice) {
+      score -= 8;
+    }
+    if (queryHasProfit && skillIsProfitCalculator) {
+      score += 16;
+      reasons.push("涓撳睘:利润率计算器");
+    } else if (queryHasProfit && skillIsProfit && !skillIsProfitCalculator) {
+      score -= 6;
+    }
+    if (queryHasTitleOptimization && skill.id === "product-title-optimization") {
+      score += 12;
+      reasons.push("涓撳睘:产品标题优化");
+    }
+    if (queryHasPriceComparison && skill.id === "competitor-price-analysis") {
+      score += 8;
+      reasons.push("动作:价格对比");
+    } else if (queryHasPriceTracking && skill.id === "competitor-price-tracker") {
+      score += 8;
+      reasons.push("动作:价格追踪");
+    }
+
+    for (const token of tokens) {
+      const normalizedToken = normalizeRouteText(token);
+      if (normalizedToken.length < 2 || ROUTER_GENERIC_TERMS.has(normalizedToken)) continue;
+      if (queryTerms.has(normalizedToken) || normalizedQuery.includes(normalizedToken)) {
+        const weight = normalizedToken.length >= 5 ? 3.5 : 2;
+        score += weight;
+        reasons.push(`词:${token}`);
+      }
+    }
+
+    const skillPlatforms = (skill.platform || []).map(normalizePlatformName);
+    const matchedPlatforms = queryPlatforms.filter((platform) => skillPlatforms.includes(platform));
+    if (matchedPlatforms.length) {
+      score += 8 * matchedPlatforms.length;
+      reasons.push(`平台:${matchedPlatforms.join("/")}`);
+    } else if (queryPlatforms.length && skillPlatforms.length && !skillPlatforms.includes("E-Commerce")) {
+      score -= 3;
+    }
+
+    const intent = routing.intent || "";
+    if (intent && queryTerms.has(intent)) {
+      score += 5;
+      reasons.push(`意图:${intent}`);
+    }
+
+    return {
+      skill,
+      score: Math.max(0, Number(score.toFixed(2))),
+      reasons: [...new Set(reasons)].slice(0, 8)
+    };
+  }
+
+  function calculateCandidateConfidence(candidate, candidates) {
+    const second = candidates.find((item) => item.skill.id !== candidate.skill.id);
+    const margin = candidate.score - (second?.score || 0);
+    return Math.min(0.99, Math.max(0.05, (candidate.score / 32) + (margin / 40)));
+  }
+
+  function normalizeRouteText(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[\s\-_/.,，。:：;；|/]+/g, "")
+      .trim();
+  }
+
+  function extractRouteTerms(value) {
+    const text = normalizeRouteText(value);
+    const terms = text.match(/[a-z0-9]{2,}|[\u4e00-\u9fa5]{2,}/g) || [];
+    const cjk = [];
+    for (const term of terms.filter((item) => /[\u4e00-\u9fa5]/.test(item))) {
+      cjk.push(term);
+      for (let size = 2; size <= Math.min(5, term.length); size += 1) {
+        for (let index = 0; index + size <= term.length; index += 1) {
+          cjk.push(term.slice(index, index + size));
+        }
+      }
+    }
+    return [...new Set([...terms, ...cjk])];
+  }
+
+  function detectQueryPlatforms(query) {
+    const names = ["Amazon Ads", "Amazon", "Walmart", "Shopify", "Etsy", "eBay", "TikTok Shop", "Meta", "Google", "WooCommerce", "DTC"];
+    return names
+      .filter((name) => normalizeRouteText(query).includes(normalizeRouteText(name)))
+      .map(normalizePlatformName);
+  }
+
+  function normalizePlatformName(value) {
+    const lower = normalizeRouteText(value);
+    if (lower.includes("\u7535\u5546") || lower.includes("ecommerce") || lower.includes("e-commerce")) return "E-Commerce";
+    if (lower.includes("tiktok")) return "TikTok Shop";
+    if (lower.includes("amazon")) return lower.includes("ads") ? "Amazon Ads" : "Amazon";
+    if (lower.includes("walmart")) return "Walmart";
+    if (lower.includes("shopify")) return "Shopify";
+    if (lower.includes("etsy")) return "Etsy";
+    if (lower.includes("ebay")) return "eBay";
+    if (lower.includes("meta") || lower.includes("facebook") || lower.includes("instagram")) return "Meta";
+    if (lower.includes("google")) return "Google";
+    if (lower.includes("woocommerce")) return "WooCommerce";
+    if (lower.includes("dtc")) return "DTC";
+    return String(value || "");
+  }
+
+  async function requestModelRouteDecision(text, candidates) {
+    const candidateText = candidates
+      .map((candidate) => JSON.stringify({
+        id: candidate.skill.id,
+        name: candidate.skill.name,
+        platform: candidate.skill.platform,
+        category: candidate.skill.category,
+        intent: candidate.skill.routing?.intent || "",
+        score: candidate.score,
+        reasons: candidate.reasons
+      }))
+      .join("\n");
+    const messages = [
+      {
+        role: "system",
+        content: [
+          "你是 skill 路由器，只能从候选列表中选择一个 skill。",
+          "必须返回 JSON，不要 Markdown：{\"skillId\":\"候选id\",\"confidence\":0到1之间的数字,\"reason\":\"简短理由\"}。",
+          "如果候选都不合适，选择最接近者并把 confidence 设为 0.2。"
+        ].join("\n")
+      },
+      {
+        role: "user",
+        content: `用户任务：${text}\n候选 skill：\n${candidateText}`
+      }
+    ];
+    const request = buildModelRequest(messages);
+    const response = await fetch(request.url, request);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const raw = extractModelText(data, state.settings.protocol);
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("路由模型未返回 JSON");
+    const parsed = JSON.parse(match[0]);
+    return {
+      skillId: String(parsed.skillId || ""),
+      confidence: Number(parsed.confidence) || 0,
+      reason: String(parsed.reason || "")
+    };
+  }
+
+  function buildRouteReason(text, skill, matches, routing) {
     if (!skill) {
       return `没有为“${summarizeInput(text)}”找到强关键词匹配，因此工作区继续使用当前技能。`;
     }
@@ -1284,7 +1893,7 @@
     const normalized = markdown.replace(/\r\n/g, "\n");
     const title = extractTitle(normalized) || fileName.replace(/\.(md|txt)$/i, "");
     const lower = normalized.toLowerCase();
-    const platform = detectPlatforms(normalized);
+    const platform = detectImportedPlatforms(normalized, title);
     const category = detectCategory(lower);
     const capabilities = extractListAfterHeading(normalized, ["capabilities", "skills", "what it does", "能力", "核心能力"]);
     const workflow = extractListAfterHeading(normalized, ["workflow", "process", "steps", "方法", "流程"]);
@@ -1362,6 +1971,32 @@
     return matches.length ? matches : ["E-Commerce"];
   }
 
+  function detectImportedPlatforms(markdown, title) {
+    const frontmatter = String(markdown || "").match(/^---\n([\s\S]*?)\n---/)?.[1] || "";
+    const explicit = [];
+    const fieldPattern = /^(?:platform|platforms|marketplace|marketplaces|supported_platforms?):\s*(.+)$/gim;
+    let match;
+    while ((match = fieldPattern.exec(frontmatter))) {
+      explicit.push(...match[1].replace(/[\[\]"']/g, "").split(",").map((item) => item.trim()));
+    }
+    const source = explicit.length ? explicit.join(" ") : `${title} ${frontmatter.split("\n").slice(0, 5).join(" ")}`;
+    const lower = source.toLowerCase();
+    const known = [
+      ["Amazon Ads", "amazon ads"],
+      ["Amazon", "amazon"],
+      ["Walmart", "walmart"],
+      ["Shopify", "shopify"],
+      ["Etsy", "etsy"],
+      ["TikTok Shop", "tiktok"],
+      ["eBay", "ebay"],
+      ["Meta", "meta"],
+      ["Google", "google"],
+      ["DTC", "dtc"]
+    ];
+    const matches = known.filter(([, alias]) => lower.includes(alias)).map(([name]) => name);
+    return matches.length ? [...new Set(matches)] : ["E-Commerce"];
+  }
+
   function detectCategory(lower) {
     const rules = [
       ["finance", ["profit", "margin", "fee", "cost", "利润", "毛利"]],
@@ -1424,6 +2059,9 @@
     }
     if (Array.isArray(imported.sessions)) {
       state.sessions = imported.sessions;
+      state.sessions.forEach((session) => {
+        session.artifacts = Array.isArray(session.artifacts) ? session.artifacts : [];
+      });
     }
     if (Array.isArray(imported.customSkills)) {
       state.customSkills = imported.customSkills;
@@ -1446,6 +2084,9 @@
     if (typeof imported.lastRouteReason === "string") {
       state.lastRouteReason = imported.lastRouteReason;
     }
+    if (imported.routeTrace && typeof imported.routeTrace === "object") {
+      state.routeTrace = imported.routeTrace;
+    }
   }
 
   function loadWorkspace() {
@@ -1467,10 +2108,14 @@
         },
         customSkills: Array.isArray(parsed.customSkills) ? parsed.customSkills : [],
         ui: normalizeUiState(parsed.ui),
+        routeTrace: parsed.routeTrace && typeof parsed.routeTrace === "object" ? parsed.routeTrace : null,
         platformFilter: parsed.platformFilter || "all",
         openGroups: parsed.openGroups && typeof parsed.openGroups === "object" ? parsed.openGroups : {},
         sessions: Array.isArray(parsed.sessions) && parsed.sessions.length ? parsed.sessions : clone(window.DEFAULT_WORKSPACE.sessions)
       };
+      workspace.sessions.forEach((session) => {
+        session.artifacts = Array.isArray(session.artifacts) ? session.artifacts : [];
+      });
       workspace.settings = normalizeSettings(workspace.settings);
       return workspace;
     } catch {
@@ -1698,6 +2343,61 @@
     renderModelOptions(preset.model, preset.models);
     els.modelInput.value = preset.model;
     els.composerModelSelect.value = preset.model;
+  }
+
+  async function refreshAvailableModels() {
+    const apiKey = String(els.apiKeyInput.value || state.settings.apiKey || "").trim();
+    if (!apiKey) {
+      alert("\u8bf7\u5148\u586b\u5199 API \u5bc6\u94a5\uff0c\u518d\u83b7\u53d6\u6a21\u578b\u5217\u8868\u3002");
+      return;
+    }
+    const protocol = normalizeProtocol(els.protocolInput.value);
+    const endpoint = buildModelsEndpoint(els.endpointInput.value, protocol);
+    const headers = { "Content-Type": "application/json" };
+    if (protocol === "anthropic") {
+      headers["x-api-key"] = apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+    } else if (protocol === "openai") {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+    const url = protocol === "gemini"
+      ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}key=${encodeURIComponent(apiKey)}`
+      : endpoint;
+    try {
+      const response = await fetch(url, { headers });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const models = extractAvailableModels(data, protocol);
+      if (!models.length) throw new Error("\u672a\u8fd4\u56de\u53ef\u7528\u6a21\u578b");
+      els.modelListInput.value = models.join("\n");
+      renderModelOptions(state.settings.model, models);
+      alert(`\u5df2\u83b7\u53d6 ${models.length} \u4e2a\u53ef\u7528\u6a21\u578b\u3002`);
+    } catch (error) {
+      alert(`\u6a21\u578b\u5217\u8868\u83b7\u53d6\u5931\u8d25\uff1a${error.message}`);
+    }
+  }
+
+  function buildModelsEndpoint(endpoint, protocol) {
+    const source = String(endpoint || "").trim();
+    if (protocol === "gemini") {
+      return source
+        .replace(/\/models\/\{model\}:generateContent.*$/i, "/models")
+        .replace(/\/models\/[^/?]+:generateContent.*$/i, "/models");
+    }
+    if (protocol === "anthropic") return source.replace(/\/messages(?:\?.*)?$/i, "/models");
+    return source.replace(/\/chat\/completions(?:\?.*)?$/i, "/models");
+  }
+
+  function extractAvailableModels(data, protocol) {
+    if (protocol === "gemini") {
+      return (data.models || [])
+        .filter((model) => !model.supportedGenerationMethods || model.supportedGenerationMethods.includes("generateContent"))
+        .map((model) => String(model.name || "").replace(/^models\//, ""))
+        .filter(Boolean);
+    }
+    return (data.data || [])
+      .map((model) => String(model.id || model.name || ""))
+      .filter(Boolean);
   }
 
   function parseModelList(value) {
