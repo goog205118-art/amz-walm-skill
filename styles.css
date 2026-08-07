@@ -1708,6 +1708,17 @@ summary.section-head::-webkit-details-marker {
 
 .rail-spacer {
   flex: 1;
+  order: 1;
+}
+
+.nav-rail > #settingsBtn,
+.nav-rail > #exportBtn,
+.nav-rail > .rail-action.file-btn:has(> #importInput) {
+  order: 2;
+}
+
+.nav-rail > .rail-initial {
+  order: 3;
 }
 
 .rail-initial {
